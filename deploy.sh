@@ -16,6 +16,11 @@ getv(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); value=$0} END{print value}
 [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || die "Missing protected environment file $ENV_FILE; run setup-vps.sh first."
 [[ "$(stat -c '%a' "$ENV_FILE")" == 600 ]] || die "$ENV_FILE must have mode 0600."
 for c in flock mktemp cp git corepack node docker systemctl nginx ss curl getent openssl python3 runuser stat awk grep sed tr sort comm install chown chmod date; do command -v "$c" >/dev/null || die "Required command missing: $c"; done
+COREPACK_BIN="$(command -v corepack)"
+export PATH="$(dirname "$COREPACK_BIN"):$PATH"
+EXPECTED_PNPM="$(node -p 'require("./package.json").packageManager.split("@").at(-1)')"
+PNPM_VERSION="$("$COREPACK_BIN" pnpm --version)"
+[[ "$PNPM_VERSION" == "$EXPECTED_PNPM" ]] || die "Repository requires pnpm $EXPECTED_PNPM; Corepack resolved $PNPM_VERSION."
 docker compose version >/dev/null 2>&1 || die 'Docker Compose plugin is required.'
 docker info >/dev/null 2>&1 || die 'Docker daemon unavailable; refusing to infer that existing data volumes are absent.'
 exec 9>/run/lock/robux-deployment.lock
@@ -68,9 +73,14 @@ if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   else info "Using the reviewed local checkout without pulling; revision $(git -C "$ROOT_DIR" rev-parse HEAD)."; fi
 else die 'Deployment directory is not a Git checkout.'; fi
 
+# Recheck after pull: packageManager in the deployed revision is authoritative.
+EXPECTED_PNPM="$(node -p 'require("./package.json").packageManager.split("@").at(-1)')"
+PNPM_VERSION="$("$COREPACK_BIN" pnpm --version)"
+[[ "$PNPM_VERSION" == "$EXPECTED_PNPM" ]] || die "Deployed revision requires pnpm $EXPECTED_PNPM; Corepack resolved $PNPM_VERSION."
+
 info 'Install locked dependencies and build all workspace packages.'
-corepack pnpm install --frozen-lockfile
-corepack pnpm build
+"$COREPACK_BIN" pnpm install --frozen-lockfile
+"$COREPACK_BIN" pnpm build
 [[ -s "$ROOT_DIR/apps/api/dist/main.js" && -s "$ROOT_DIR/apps/api/dist/worker.js" && -s "$ROOT_DIR/apps/api/dist/scheduler.js" ]] || die 'API build artifacts are incomplete.'
 [[ -s "$ROOT_DIR/apps/web/.next/standalone/apps/web/server.js" ]] || die 'Next standalone server artifact is missing.'
 # Next standalone output excludes static assets and public files.
@@ -92,7 +102,7 @@ fi
 chmod 0600 "$MIGRATION_STATE"
 DATABASE_URL="$(python3 "$ROOT_DIR/scripts/production-database-url.py" "$ENV_FILE")"
 export DATABASE_URL
-corepack pnpm --filter @robux/api run db:migrate:deploy
+"$COREPACK_BIN" pnpm --filter @robux/api run db:migrate:deploy
 unset DATABASE_URL
 "${COMPOSE[@]}" exec -T postgres psql -U "$(getv POSTGRES_USER)" -d "$(getv POSTGRES_DB)" -Atc "SELECT migration_name || ':' || coalesce(finished_at::text, 'pending') FROM _prisma_migrations ORDER BY started_at" >"$BACKUP_DIR/migrations-after-$(date -u +%Y%m%dT%H%M%SZ).txt"
 chmod 0600 "$BACKUP_DIR"/migrations-after-*.txt

@@ -80,7 +80,8 @@ sudo ./deploy.sh
 ```
 
 The script requires a clean Git checkout with an upstream and pulls using `--ff-only`,
-installs from the frozen pnpm lockfile, builds, validates Compose, starts only the existing
+resolves the exact pnpm version declared by the root `packageManager` through Corepack,
+rechecks it after pulling, installs from the frozen lockfile, builds, validates Compose, starts only the existing
 production Postgres/Redis services, runs `prisma migrate deploy`, and then restarts the four
 systemd services. It stops only this Compose project's legacy application containers
 (`api`, `worker`, `scheduler`, `frontend`, `nginx`) after the build and migration pass; it
