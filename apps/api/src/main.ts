@@ -20,8 +20,8 @@ async function bootstrap(): Promise<void> {
   // SIGTERM from `docker stop` → Nest closes providers (DB, Redis) before exit.
   app.enableShutdownHooks();
 
-  await app.listen(config.apiPort, '0.0.0.0');
-  app.get(Logger).log({ event: 'api.started', port: config.apiPort });
+  await app.listen(config.apiPort, config.apiHost);
+  app.get(Logger).log({ event: 'api.started', host: config.apiHost, port: config.apiPort });
 }
 
 void bootstrap();

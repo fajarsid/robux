@@ -1,6 +1,5 @@
-# Production override (single VPS). Host Nginx terminates TLS and proxies to this private edge.
-#   IMAGE_TAG=<git-sha> docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# Only nginx publishes ports. Docker restarts every long-running service (no PM2).
+# Production override (single VPS). Host Nginx terminates TLS and proxies directly to systemd
+# API/Web services. deploy.sh starts only PostgreSQL and Redis with loopback-only host ports.
 
 # Own project name: volumes robux-prod_pgdata and robux-prod_redisdata belong to production only.
 name: robux-prod
@@ -17,10 +16,15 @@ services:
   postgres:
     <<: *prod
     mem_limit: 1g
+    # Host application services reach the DB through loopback; never publish on 0.0.0.0.
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432'
 
   redis:
     <<: *prod
     mem_limit: 512m
+    ports:
+      - '127.0.0.1:${REDIS_HOST_PORT:-6380}:6379'
 
   migrate:
     environment:
@@ -66,6 +70,5 @@ services:
     <<: *prod
     volumes:
       - ./infra/nginx/prod:/etc/nginx/templates:ro
-    ports:
-      - '127.0.0.1:${ROBUX_LOCAL_PORT:-8088}:8080'
+    # Retained only for legacy/manual Compose use. Production deploy.sh does not start this edge.
     mem_limit: 128m

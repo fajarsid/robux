@@ -1,0 +1,28 @@
+[Unit]
+Description=Robux Digital Fulfillment Scheduler
+After=network-online.target docker.service robux-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=robux
+Group=robux
+WorkingDirectory=@APP_ROOT@
+EnvironmentFile=/etc/robux/production.env
+ExecStart=@NODE_BIN@ @APP_ROOT@/apps/api/dist/scheduler.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0027
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

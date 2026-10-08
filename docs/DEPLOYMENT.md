@@ -1,106 +1,153 @@
-# Deployment
+# Production Deployment
 
-**Status:** Existing host Nginx terminates TLS with host Certbot-managed Let's Encrypt certificates. Robux Docker Nginx binds only to loopback.
-**Decision record:** ADR-002.
+Production uses the existing host Nginx as the only public edge. API, web, worker and
+scheduler are separate non-root systemd services. Docker Compose runs PostgreSQL 17 and
+Redis only; both host bindings are loopback-only and their named data volumes are retained.
+The application does not require Docker Nginx, Docker Certbot, or immutable image tags.
 
-> This project uses a Docker-first deployment architecture. Docker Compose manages application services and their lifecycle. Nginx acts as the reverse proxy/edge gateway. PM2 is intentionally not used because application process lifecycle is managed by Docker.
+```text
+Internet :80/:443 → host Nginx → 127.0.0.1 API / Web
+                                    ├── systemd API, worker, scheduler
+                                    └── systemd Next.js standalone web
+Docker PostgreSQL and Redis → 127.0.0.1 only
+```
 
----
+## Provision the VPS
 
-## 1. Production model
+Run these commands from the checked-out repository on the VPS. The scripts require the
+existing host Nginx, host Certbot, Docker Compose, Node.js 22.12+, Corepack/pnpm, systemd,
+`ss`, `getent`, `curl`, and `nginx -T`. They do not install or replace the VPS's global Nginx.
 
-Internet / optional Cloudflare proxy
-  -> Existing host Nginx :80/:443 (shared VPS edge, host Certbot TLS)
-  -> 127.0.0.1:ROBUX_LOCAL_PORT
-  -> Docker Compose Robux edge (Nginx :8080 internal, frontend :3000, API :4000,
-     worker, scheduler, private PostgreSQL/Redis, one-shot migration)
+```bash
+sudo ./setup-vps.sh
+sudoedit /etc/robux/production.env
+```
 
-The host Nginx remains the public edge for all existing VPS projects. Robux deployment adds only a marked vhost in the active sites-enabled or conf.d convention. It validates the full host config with nginx -t before a graceful systemctl reload nginx; it never stops, restarts, disables, or replaces host Nginx. Host Certbot stores certificates under /etc/letsencrypt; only host Nginx reads the private key. Docker Nginx is HTTP-only and bound to 127.0.0.1:ROBUX_LOCAL_PORT. PostgreSQL and Redis remain private.
+Set `DOMAIN` to the confirmed public domain in `/etc/robux/production.env`, and configure
+Telegram and any approved payment credentials in files under `/etc/robux/secrets/`. The
+setup script creates a dedicated `robux` system user, chooses ports only after checking
+`ss -ltnp` and current Docker port mappings, creates the four systemd units, and adds a
+single Robux virtual host following the active host Nginx include convention. It refuses a
+missing/unresolved domain, a port conflict it cannot safely reuse, or a domain already
+owned by another virtual host. It snapshots the prior Nginx configuration and only reloads
+after `nginx -t` passes. A failed validation restores the Robux vhost and never reloads.
+When migrating a Robux checkout, it carries forward its public `APP_DOMAIN`/`API_DOMAIN`,
+database names, non-secret feature flags, and existing files in the configured `SECRETS_DIR`
+only when destination values do not exist. If the production Docker volume exists but its
+database or encryption secrets cannot be recovered, setup stops rather than generating new
+keys that would make persisted data unreadable.
 
-## 2. Routing
+Production configuration and credentials stay outside Git:
 
-| Host            | Upstream         | Notes |
-|-----------------|------------------|-------|
-| `APP_DOMAIN`  | `frontend:3000`  | Storefront, account, admin UI. |
-| `APP_DOMAIN/api/*` | `api:4000` | Browser API calls and Telegram webhook, same origin as the Mini App (ADR-008). `/healthz` (frontend container probe) denied. |
-| `API_DOMAIN`  | `api:4000`       | Dedicated API hostname for provider callbacks and health checks. `/health/ready` and `/metrics` denied at Nginx. |
-| anything else   | 444 / redirect   | Default server drops unknown hosts. |
+```text
+/etc/robux/production.env     root:robux 0600
+/etc/robux/secrets/*          root:robux, restricted by /etc/robux directory
+```
 
-The Docker Nginx retains app/API routing, security headers, request limits, SSE/WebSocket proxy support, request IDs, and JSON access logs. Public TLS, HTTP-to-HTTPS redirect, and ACME HTTP-01 handling belong to host Nginx. No TLS key is stored in the repository or mounted into Docker.
+Secret files are created only when absent. Existing values are preserved. Do not copy
+production secrets into the repository's `.env` or `secrets/` directory.
 
-## 3. Environment separation
+## TLS and Nginx
 
-Development and production are separate Compose projects, set by the `name:` in each override file:
+The setup script does not issue a certificate. After DNS points to the VPS and the new HTTP
+vhost is active, issue/attach the normal host certificate:
 
-| Override | Project | Containers | Volumes |
-|----------|---------|------------|---------|
-| `docker-compose.dev.yml` | `robux-dev` | `robux-dev-*` | `robux-dev_pgdata`, `robux-dev_redisdata` |
-| `docker-compose.prod.yml` | `robux-prod` | `robux-prod-*` | `robux-prod_pgdata`, `robux-prod_redisdata` |
+```bash
+sudo nginx -t
+# Run the certbot --nginx command with domain arguments printed by setup-vps.sh.
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot renew --dry-run
+```
 
-Each project also has its own networks, so a development container cannot reach the production database even when both stacks run on one machine (verified). Do not set `COMPOSE_PROJECT_NAME` or pass `-p` for these files: that would override the separation. The development seed and dev accounts live only in `robux-dev_pgdata`; the production API refuses to start if they ever appear in its database.
+Use the exact domain arguments printed by `setup-vps.sh`; it preserves a configured legacy
+API hostname as an optional alias and includes it in the certificate request.
 
-Migration note (2026-10-05): the earlier shared volumes `robux_pgdata` and `robux_redisdata` were copied into the `robux-dev_*` volumes (data preserved) and left untouched as a backup. They are no longer mounted by anything and can be removed with `docker volume rm robux_pgdata robux_redisdata` once the development data has been checked.
+Certbot and its renewal timer remain host-managed. The Robux vhost routes `/api/` and
+`/health/live` to the API and all other paths, including `/telegram-store`, to the web app.
+The webhook is `/api/v1/telegram/webhook`. No WebSocket-specific headers are added; the current application uses ordinary HTTP.
+Access logging is disabled for this vhost to avoid recording sensitive URL parameters. Do not stop, disable, restart,
+replace, or reinstall global Nginx. Postgres and Redis are never published on public
+interfaces; only host Nginx owns ports 80/443.
 
-## 3a. Networks
+## Deploy
 
-| Network  | internal | Members |
-|----------|----------|---------|
-| `edge`   | no       | nginx |
-| `app`    | yes      | nginx, frontend, api |
-| `data`   | yes      | api, worker, scheduler, migrate, postgres, redis |
-| `egress` | no       | api, worker, scheduler |
+Once setup, environment, secrets, and TLS are ready:
 
-Docker-published ports bypass host firewalls like UFW (Docker writes its own iptables rules). The real control for Postgres/Redis is "not published". Keep SSH restricted. If Cloudflare is enabled, allow its ranges to reach HTTPS; allow inbound TCP/80 for Let's Encrypt HTTP-01 validation and renewal (or use DNS-01 after configuring an authorized DNS plugin).
+```bash
+sudo ./deploy.sh
+```
 
-## 4. Service lifecycle
+The script requires a clean Git checkout with an upstream and pulls using `--ff-only`,
+installs from the frozen pnpm lockfile, builds, validates Compose, starts only the existing
+production Postgres/Redis services, runs `prisma migrate deploy`, and then restarts the four
+systemd services. It stops only this Compose project's legacy application containers
+(`api`, `worker`, `scheduler`, `frontend`, `nginx`) after the build and migration pass; it
+never removes containers' persistent volumes. Health checks cover the local API and
+`/telegram-store`, HTTPS and redirect behavior, and the API/web paths through host Nginx.
+The script checks API, worker and scheduler readiness, then snapshots Nginx server names before/after its graceful reload and refuses to
+continue if existing names disappear. It registers/verifies the Telegram webhook only when
+both token and webhook-secret files are configured; tokens are not printed.
 
-- `restart: unless-stopped` for every long-running service in `docker-compose.prod.yml`; `migrate` is `restart: "no"`.
-- Startup order by health: `postgres`/`redis` healthy → `migrate` completed successfully → `api`, `worker`, `scheduler` → `frontend` (after `api` healthy) → `nginx`.
-- Graceful shutdown: `tini` as PID 1; `stop_grace_period: 30s` for `worker`, 15s for others. Workers stop taking new jobs and let in-flight ones finish within `WORKER_SHUTDOWN_TIMEOUT_MS` (default 25 s); a job cut off at the timeout is re-delivered by BullMQ stalled-job recovery, and job state in PostgreSQL decides what is safe (ADR-004).
-- Queue settings (optional, defaults shown): `QUEUE_PREFIX=bull`, `WORKER_SHUTDOWN_TIMEOUT_MS=25000`. Each environment uses its own Redis, so dev and prod never consume each other's jobs.
-- Compose does not restart `unhealthy` containers by itself; only process exit triggers `restart:`. Fatal errors exit non-zero. `unhealthy` status must be alerted on (Phase 15).
-- Logging: `json-file` driver with `max-size: 10m`, `max-file: 5` (or the `local` driver).
-- Resource limits (`deploy.resources.limits` / `mem_limit`, `cpus`) set per service after measurement; initial guesses documented in `docker-compose.prod.yml`.
+The deploy script does not enable production payment, Stars, TON treasury, Binance
+withdrawals, Fragment, or fulfillment suppliers. Existing feature flags are not silently
+rewritten. The template defaults these sensitive integrations off.
 
-## 5. Configuration and secrets
+## Services and operations
 
-- `.env.example` documents every variable. Real values are never committed.
-- Non-secret config: env file on the host (`/var/www/robux/.env`, mode `0600`, owner root).
-- Payments (non-secret, Phase 6, docs/integrations/duitku.md): `PAYMENT_GATEWAY=none|duitku` (default `none`: payment intake off, no simulated gateway), `DUITKU_ENVIRONMENT=sandbox|production`, `DUITKU_CALLBACK_URL` (`https://api.<domain>/api/v1/webhooks/payments/duitku`), `DUITKU_RETURN_URL` (`https://app.<domain>/…`, the storefront return page), `DUITKU_PAYMENT_METHODS` (codes active in the Duitku project), optional `DUITKU_CALLBACK_ALLOWED_IPS` (Duitku's published callback IPs) and `DUITKU_REQUEST_TIMEOUT_MS` (default 15000). The API refuses to start with `duitku` and a missing key, method list or URL, and requires https URLs in production. The callback reaches the API through the `api.<domain>` host; Duitku requires port 80 or 443 and HTTP 200.
-- `TRUSTED_ORIGINS` (non-secret): the exact browser origin(s), e.g. `https://app.<domain>`. Used for CSRF origin checks and CORS; wildcards are refused at startup.
-- Secrets (DB password, Redis password, `csrf_secret`, `totp_encryption_key` (64 hex chars), `idempotency_encryption_key` (64 hex chars, api only, Phase 5), `duitku_merchant_code` and `duitku_api_key` (api only, Phase 6, values from the Duitku dashboard; `generate-secrets.sh` creates empty placeholders so Compose can mount them while payments are off), provider credentials, notification tokens): Compose `secrets:` mounted as files under `/run/secrets/*`, read by the config loader. Never in images, build args, or committed Compose files.
+```bash
+sudo systemctl status robux-api robux-web robux-worker robux-scheduler
+sudo journalctl -u robux-api -u robux-web -u robux-worker -u robux-scheduler -f
+docker compose --env-file /etc/robux/production.env -f docker-compose.yml -f docker-compose.prod.yml ps
+ss -ltnp
+sudo nginx -t
+```
 
-## 6. Commands
+Current API and Web listen on their selected loopback ports in `/etc/robux/production.env`.
+Worker and scheduler health ports are loopback-only. PostgreSQL/Redis host ports are selected
+separately and bound to `127.0.0.1`. Compose project name and volumes remain `robux-prod`;
+do not use `down -v`, `volume prune`, or remove the named volumes during deployment.
 
-Run the production helper on the VPS:
+## Failure and rollback
 
-chmod 0750 ./deploy.sh
-sudo ./deploy.sh <immutable-release-tag>
+Build or migration failure stops before restarting the app services. systemd keeps each
+process non-root and restarts it after failure. For an application rollback, record the
+deployed Git revision, check out the previous known-good revision in a maintenance window,
+then run `sudo bash ./deploy.sh --no-pull` to rebuild/migrate/restart without pulling
+the newer revision back in. The same option supports a reviewed, intentionally dirty local
+checkout; it never discards files. Do not use `git reset --hard`. Database
+migrations may not be reversible; restore a verified database backup only under the
+separate database recovery procedure. Nginx configuration backups created by setup are
+stored next to the Robux vhost; no other virtual host is modified.
 
-The script requires an existing .env with the intended public APP_DOMAIN, API_DOMAIN, and CERTBOT_EMAIL; it stops with DOMAIN_REQUIRED rather than inventing a hostname. Configure DNS for each name and use the VPS's existing host Nginx and Certbot. The helper snapshots nginx -T, verifies host Nginx owns ports 80/443, selects a free loopback-only Robux port, starts the application, detects the established vhost include convention, and adds or updates only its marked Robux file. It verifies HTTP-01 routing, obtains a certificate with host Certbot when needed, tests nginx -t, and gracefully reloads host Nginx. It then verifies the existing renewal timer/dry-run, existing domains, Robux HTTPS/redirect/API/Mini App, and Telegram webhook. It never installs a second Nginx/Certbot stack, binds Docker to public ports, or enables payment/fulfillment. It does not pull source code.
+## Runtime verification
 
-Set DEPLOY_BUILD=false only when tagged images are published to the configured registry. The production override keeps FULFILLMENT_PROVIDER=none and payment intake disabled. Development and production operational/rollback commands continue below.
+This repository-side change has not been run on the VPS. Before calling deployment complete,
+verify `nginx -T`, `nginx -t`, all four systemd units, Docker health for PostgreSQL/Redis,
+`ss -ltnp`, `http://<DOMAIN>` redirect, `https://<DOMAIN>/telegram-store`,
+`https://<DOMAIN>/api/v1/telegram/webhook`, and several existing VPS domains. Then open the
+bot in Telegram and verify `/start` → Mini App. Do not report these runtime checks as passed
+until they have been executed on that host.
 
-## 7. CI/CD
+## Migration precautions
 
-GitHub Actions: install → lint → typecheck → unit tests → integration tests (Testcontainers) → build → Docker build (+ trivy scan) → push images tagged with git SHA. Production deploy is a separate, manually approved workflow (GitHub Environments with required reviewers) that SSHes to the VPS and runs the production commands above. No automatic production deploys initially.
+Setup switches the Robux vhost from the old Docker edge to direct upstreams. Until the
+first build and service start finish, the Robux domain may return 502. Schedule this
+first migration in a maintenance window; unrelated virtual hosts are not changed.
+Subsequent builds run in the checkout, so a build can affect an already running Next.js
+process even before restart. This simple deployment is not a zero-downtime release system.
 
-## 8. Backups (detailed and tested in Phase 18)
+DNS resolution is checked automatically. Confirm separately that all resolved A/AAAA
+records point to this VPS (or its intended proxy) before running Certbot. Setup does not
+change DNS. Certificates, renewal, and Telegram client behavior require VPS verification.
 
-- Nightly `pg_dump -Fc` from a short-lived container on the `data` network, encrypted (age/gpg), shipped off-host (S3-compatible object storage). Retention proposal: 7 daily, 4 weekly, 6 monthly.
-- WAL archiving (wal-g or pgBackRest) for point-in-time recovery once revenue justifies it.
-- Redis: AOF persistence for queue continuity; not backed up as a source of truth (PostgreSQL + outbox can rebuild queue state).
-- Restore procedure and a timed restore drill are required before backups are declared working.
+Both scripts serialize execution with a shared lock and save Nginx snapshots in a root-only
+`/var/tmp/robux-deploy.*` directory. Backups contain sensitive configuration: keep their
+permissions restrictive and periodically archive/remove obsolete copies manually.
+No database contents are backed up by these scripts; migration history is an audit snapshot,
+not a database backup. Take a verified database backup before schema changes.
 
-## 8a. Queue operations
-
-- The `worker` relays outbox events and consumes the `payment`, `order-processing`, `fulfillment` and `inventory-sync` queues; the `scheduler` only registers schedules. Scale workers with `--scale worker=N`: relays take disjoint batches (`SKIP LOCKED`) and every consumer is idempotent.
-- A paid order moves to `QUEUED` about one second after payment confirmation. An order stuck in `PAID` means the worker is down or Redis is unreachable: check `docker compose ... ps worker`, then `outbox_events` rows with `published_at IS NULL` and their `last_error`. Events are delivered automatically once the worker and Redis are back; nothing has to be re-sent by hand.
-- Failed jobs are kept 7 days with job id (= outbox event id), name, queue, attempts, failure reason and correlation id (`job.failed_permanently` log lines carry the same fields).
-- Fulfillment (Phase 9, ADR-006) runs only when the worker has a provider. Development Compose sets `FULFILLMENT_PROVIDER=mock` (simulated, `MOCK_FULFILLMENT_SCENARIO` defaults to `SUCCESS`); production Compose sets `FULFILLMENT_PROVIDER=none`, so `QUEUED` orders wait with their `FULFILLMENT_REQUESTED` events unpublished until an authorized provider is configured, and are then delivered as a backlog. The mock is refused in production at startup.
-- An order in `RETRYING`, `PROCESSING` or `FULFILLMENT_PENDING` normally moves within minutes. If its job is gone (failed after 5 runs with `BUSY`/`CONFLICT`, or Redis data loss), find the order's `FULFILLMENT_REQUESTED` event and clear its `published_at` so the relay delivers it again; the engine resumes from the database and verifies before sending anything. `RECONCILIATION_REQUIRED` orders need a person: check the provider for the attempt's client reference first.
-
-## 9. Known limits
-
-- Single VPS: no cross-host failover. Upgrade path: managed PostgreSQL → managed Redis → second app host behind Cloudflare load balancing.
-- Cloudflare proxy timeouts (100 s on most plans) apply to long requests; SSE endpoints send heartbeats, and no request waits on fulfillment.
+Provisioning intentionally requires the host dependencies to be installed already; it does
+not reinstall shared VPS infrastructure. If legacy Telegram secrets were environment values
+rather than files, move them manually to the external secret files without printing them.
+The production runtime rejects mock payment/fulfillment by design. This refactor does not
+weaken that gate to make a staging workflow look production-ready.

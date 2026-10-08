@@ -1,0 +1,29 @@
+[Unit]
+Description=Robux Digital Fulfillment API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=robux
+Group=robux
+WorkingDirectory=@APP_ROOT@
+EnvironmentFile=/etc/robux/production.env
+ExecStart=@NODE_BIN@ @APP_ROOT@/apps/api/dist/main.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+UMask=0027
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

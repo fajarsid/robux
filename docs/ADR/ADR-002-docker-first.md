@@ -1,6 +1,6 @@
-# ADR-002: Docker-first Development and Deployment (No PM2)
+# ADR-002: Docker-first Development (production superseded by ADR-014)
 
-- **Status:** Accepted (revised 2026-10-05 after the Docker-first architecture correction)
+- **Status:** Superseded for production deployment by ADR-014; retained for development Compose topology
 - **Date:** 2026-10-05
 - **Deciders:** Engineering, product owner (architecture correction)
 - **Supersedes:** PRD §13 header line "Nginx + PM2 / Docker-ready" and PRD §63 "PM2 processes"
@@ -8,7 +8,7 @@
 
 ## Decision statement
 
-> This project uses a Docker-first deployment architecture. Docker Compose manages application services and their lifecycle. Nginx acts as the reverse proxy/edge gateway. PM2 is intentionally not used because application process lifecycle is managed by Docker.
+> Development uses Docker Compose for application services. Production process lifecycle and public edge are now defined by ADR-014: systemd manages application processes and the existing host Nginx remains the public reverse proxy. PM2 is not used.
 
 ## Context
 

@@ -15,6 +15,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   API_PORT: port.default(4000),
+  API_HOST: z.string().min(1).default('0.0.0.0'),
   WORKER_HEALTH_PORT: port.default(4001),
   SCHEDULER_HEALTH_PORT: port.default(4002),
 
@@ -32,6 +33,7 @@ export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
   logLevel: string;
   apiPort: number;
+  apiHost: string;
   healthPort: number;
   databaseUrl: string;
   redis: { host: string; port: number; password: string };
@@ -109,6 +111,7 @@ export function loadConfig(service: ServiceName, env: NodeJS.ProcessEnv = proces
     nodeEnv: e.NODE_ENV,
     logLevel: e.LOG_LEVEL,
     apiPort: e.API_PORT,
+    apiHost: e.API_HOST,
     healthPort,
     databaseUrl,
     redis: { host: e.REDIS_HOST, port: e.REDIS_PORT, password: redisPassword },

@@ -1,0 +1,29 @@
+[Unit]
+Description=Robux Telegram Store Web
+After=network-online.target robux-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=robux
+Group=robux
+WorkingDirectory=@APP_ROOT@
+EnvironmentFile=/etc/robux/production.env
+ExecStart=@NODE_BIN@ @APP_ROOT@/apps/web/.next/standalone/apps/web/server.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@APP_ROOT@/apps/web/.next/standalone/apps/web/.next/cache
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0027
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

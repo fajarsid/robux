@@ -60,6 +60,11 @@ describe('loadConfig', () => {
     expect(loadConfig('scheduler', baseEnv).healthPort).toBe(4002);
   });
 
+  it('defaults the API listener to all interfaces and allows a loopback-only host', () => {
+    expect(loadConfig('api', baseEnv).apiHost).toBe('0.0.0.0');
+    expect(loadConfig('api', { ...baseEnv, API_HOST: '127.0.0.1' }).apiHost).toBe('127.0.0.1');
+  });
+
   it('parses exact trusted origins for the API', () => {
     const config = loadConfig('api', {
       ...baseEnv,

@@ -1,6 +1,6 @@
 # ADR-013: Let's Encrypt certificates managed by Certbot
 
-**Status:** Accepted
+**Status:** Accepted for host TLS; Docker edge topology superseded by ADR-014
 
 ## Context
 

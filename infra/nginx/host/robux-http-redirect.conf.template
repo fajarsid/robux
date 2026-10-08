@@ -1,0 +1,17 @@
+# managed-by-robux
+upstream robux_api {
+    server 127.0.0.1:@API_PORT@;
+    keepalive 16;
+}
+upstream robux_web {
+    server 127.0.0.1:@WEB_PORT@;
+    keepalive 16;
+}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @SERVER_NAMES@;
+    access_log off;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/letsencrypt; default_type text/plain; try_files $uri =404; }
+    location / { return 301 https://$host$request_uri; }
+}

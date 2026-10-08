@@ -1,211 +1,165 @@
 #!/usr/bin/env bash
-# Deploy Robux behind existing host Nginx. Never stop/restart host Nginx.
+# Build and deploy Robux host services behind the existing host Nginx.
 set -Eeuo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$ROOT_DIR/.env"
+cd "$ROOT_DIR"
+PULL=1
+case "${1:-}" in '') ;; --no-pull) PULL=0;; *) printf 'Usage: sudo bash deploy.sh [--no-pull]\n' >&2; exit 1;; esac
+[[ $# -le 1 ]] || exit 1
+ENV_FILE=/etc/robux/production.env
+SECRETS_DIR=/etc/robux/secrets
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/docker-compose.prod.yml")
-MARKER="# managed-by-robux-deploy"
-WEBROOT=/var/www/letsencrypt
 die(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-getv(){ sed -n "s/^$1=//p" "$ENV_FILE" | tail -n1 | sed -E "s/^['\"]|['\"]$//g"; }
-setv(){
- local key="$1" val="$2" tmp found=0 line
- tmp="$(mktemp "${ENV_FILE}.tmp.XXXXXX")"
- while IFS= read -r line || [[ -n "$line" ]]; do
-  if [[ "$line" == "$key="* ]]; then
-   if (( found == 0 )); then printf '%s=%s\n' "$key" "$val" >>"$tmp"; found=1; fi
-  else printf '%s\n' "$line" >>"$tmp"; fi
- done <"$ENV_FILE"
- (( found )) || printf '%s=%s\n' "$key" "$val" >>"$tmp"
- chmod 0600 "$tmp"; chown root:root "$tmp"; mv -f "$tmp" "$ENV_FILE"
-}
-[[ $EUID -eq 0 ]] || die 'Run: sudo ./deploy.sh <immutable-image-tag>.'
-[[ -f "$ENV_FILE" ]] || die 'DOMAIN_REQUIRED: create .env with intended APP_DOMAIN and API_DOMAIN; no domain is guessed.'
-for cmd in docker nginx certbot curl getent systemctl ss python3 openssl; do command -v "$cmd" >/dev/null || die "Required command missing: $cmd"; done
-docker compose version >/dev/null 2>&1 || die 'Docker Compose plugin required.'
-chmod 0600 "$ENV_FILE"; chown root:root "$ENV_FILE"
-if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 && ! git -C "$ROOT_DIR" check-ignore --quiet "$ENV_FILE"; then die '.env is not ignored by Git.'; fi
-APP_HOST="$(getv APP_DOMAIN)"; API_HOST="$(getv API_DOMAIN)"
-[[ "$APP_HOST" =~ ^[A-Za-z0-9.-]+$ && "$APP_HOST" != *localhost* ]] || die 'DOMAIN_REQUIRED: set public APP_DOMAIN in .env.'
-[[ "$API_HOST" =~ ^[A-Za-z0-9.-]+$ && "$API_HOST" != *localhost* ]] || die 'DOMAIN_REQUIRED: set public API_DOMAIN in .env.'
-[[ "$APP_HOST" != "$API_HOST" ]] || die 'APP_DOMAIN and API_DOMAIN must be distinct.'
-for host in "$APP_HOST" "$API_HOST"; do getent ahostsv4 "$host" >/dev/null || die "DNS does not resolve: $host"; done
-TAG="${1:-${IMAGE_TAG:-}}"; [[ -n "$TAG" && "$TAG" != local ]] || die 'Use sudo ./deploy.sh <immutable-image-tag>.'
-export IMAGE_TAG="$TAG"
-[[ "$(systemctl is-active nginx)" == active ]] || die 'Host Nginx not active; refusing to start/replace it.'
-mkdir -p /tmp; nginx -T >/tmp/nginx-before-robux.txt 2>&1 || die 'Existing nginx config invalid; no changes made.'
-listeners="$(ss -H -ltnp)"
-ss -H -ltnp 'sport = :80' | grep -q nginx || die 'Port 80 is not owned by host Nginx.'
-ss -H -ltnp 'sport = :443' | grep -q nginx || die 'Port 443 is not owned by host Nginx.'
-SECRETS_DIR="$(getv SECRETS_DIR)"; SECRETS_DIR="${SECRETS_DIR:-./secrets}"
-[[ "$SECRETS_DIR" = /* ]] || SECRETS_DIR="$ROOT_DIR/$SECRETS_DIR"
-mkdir -p "$SECRETS_DIR"; chmod 0700 "$SECRETS_DIR"; (cd "$ROOT_DIR" && SECRETS_DIR="$SECRETS_DIR" bash scripts/generate-secrets.sh)
-for s in postgres_password.txt redis_password.txt csrf_secret.txt totp_encryption_key.txt idempotency_encryption_key.txt account_inventory_encryption_key.txt; do [[ -s "$SECRETS_DIR/$s" ]] || die "Missing secret $SECRETS_DIR/$s"; done
-setv TRUSTED_ORIGINS "https://$APP_HOST"; setv TELEGRAM_MINI_APP_URL "https://$APP_HOST/telegram-store"
-setv DUITKU_CALLBACK_URL "https://$API_HOST/api/v1/webhooks/payments/duitku"; setv DUITKU_RETURN_URL "https://$APP_HOST/payment/return"
-setv PAYMENT_GATEWAY none; setv PAYMENT_PROVIDER_STARS_ENABLED false; setv TELEGRAM_STARS_PRODUCTION_AUTHORIZED false
-setv TON_TREASURY_ENABLED false; setv TON_TREASURY_PRODUCTION_AUTHORIZED false; setv BINANCE_WITHDRAWAL_ENABLED false
-freeport(){ ! ss -H -ltn "sport = :$1" | grep -q .; }
-PORT="$(getv ROBUX_LOCAL_PORT)"
-EXISTING_NGINX="$("${COMPOSE[@]}" ps -q nginx 2>/dev/null || true)"
-if [[ "$PORT" =~ ^[0-9]+$ ]] && ! freeport "$PORT" && [[ -n "$EXISTING_NGINX" ]] \
-  && docker inspect --format '{{json .NetworkSettings.Ports}}' "$EXISTING_NGINX" | grep -Fq "\"HostIp\":\"127.0.0.1\",\"HostPort\":\"$PORT\""; then
-  : # Reuse this project's current localhost binding on repeat deployments.
-elif [[ ! "$PORT" =~ ^[0-9]+$ ]] || ! freeport "$PORT"; then PORT=''; for p in $(seq 8088 8199); do if freeport "$p"; then PORT="$p"; break; fi; done; fi
-[[ -n "$PORT" ]] || die 'No free port in 8088-8199.'
-setv ROBUX_LOCAL_PORT "$PORT"
 info(){ printf '\n==> %s\n' "$*"; }
-info "Robux Docker edge will bind only 127.0.0.1:$PORT."
+getv(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); value=$0} END{print value}' "$ENV_FILE"; }
+[[ $EUID -eq 0 ]] || die 'Run: sudo ./deploy.sh'
+[[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || die "Missing protected environment file $ENV_FILE; run setup-vps.sh first."
+[[ "$(stat -c '%a' "$ENV_FILE")" == 600 ]] || die "$ENV_FILE must have mode 0600."
+for c in flock mktemp cp git corepack node docker systemctl nginx ss curl getent openssl python3 runuser stat awk grep sed tr sort comm install chown chmod date; do command -v "$c" >/dev/null || die "Required command missing: $c"; done
+docker compose version >/dev/null 2>&1 || die 'Docker Compose plugin is required.'
+docker info >/dev/null 2>&1 || die 'Docker daemon unavailable; refusing to infer that existing data volumes are absent.'
+exec 9>/run/lock/robux-deployment.lock
+flock -n 9 || die 'Another Robux setup/deployment is running.'
+SNAPSHOT_DIR="$(mktemp -d /var/tmp/robux-deploy.XXXXXX)"
+chmod 0700 "$SNAPSHOT_DIR"
+printf 'Private audit snapshots: %s\n' "$SNAPSHOT_DIR"
+DOMAIN="$(getv DOMAIN)"
+[[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ && "$DOMAIN" != *localhost* ]] || die 'DOMAIN_REQUIRED: set DOMAIN in /etc/robux/production.env.'
+[[ "$(getv API_HOST)" == 127.0.0.1 && "$(getv HOSTNAME)" == 127.0.0.1 ]] || die 'API and Web must bind only to 127.0.0.1.'
+getent ahostsv4 "$DOMAIN" >/dev/null || die "DNS for $DOMAIN does not resolve."
+API_ALIAS="$(getv API_DOMAIN_ALIAS)"
+if [[ -n "$API_ALIAS" ]]; then getent ahostsv4 "$API_ALIAS" >/dev/null || die "DNS for API_DOMAIN_ALIAS $API_ALIAS does not resolve."; fi
+for key in API_PORT WEB_PORT POSTGRES_HOST_PORT REDIS_HOST_PORT WORKER_HEALTH_PORT SCHEDULER_HEALTH_PORT; do
+  value="$(getv "$key")"; [[ "$value" =~ ^[0-9]{2,5}$ ]] && ((value > 1024 && value < 65536)) || die "Invalid $key in production environment."
+done
+for port in 80 443; do ss -H -ltnp "sport = :$port" | grep -qi nginx || die "Expected existing host Nginx to own port $port."; done
+[[ "$(systemctl is-active nginx)" == active ]] || die 'Host Nginx is not active; refusing to change global Nginx.'
+nginx -T >"$SNAPSHOT_DIR/nginx-before-robux-deploy.txt" 2>&1 || die 'nginx -T failed; deployment stopped.'
+VHOST=/etc/nginx/sites-available/robux.conf; [[ -f "$VHOST" ]] || VHOST=/etc/nginx/conf.d/robux.conf
+[[ -f "$VHOST" ]] || die 'Robux host Nginx vhost is missing; run setup-vps.sh first.'
+grep -Fq "server 127.0.0.1:$(getv API_PORT);" "$VHOST" || die 'Nginx API upstream does not match configured API_PORT.'
+grep -Fq "server 127.0.0.1:$(getv WEB_PORT);" "$VHOST" || die 'Nginx Web upstream does not match configured WEB_PORT.'
+grep -E "server_name[^;]*$DOMAIN" "$VHOST" >/dev/null || die 'Robux Nginx vhost does not include configured DOMAIN.'
+[[ -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" && -s "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die "TLS certificate missing. After DNS and HTTP routing are ready, run: sudo certbot --nginx -d $DOMAIN"
+openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkend 0 >/dev/null || die 'TLS certificate expired.'
+openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkhost "$DOMAIN" >/dev/null || die 'Let’s Encrypt certificate does not cover DOMAIN.'
+if [[ -n "$API_ALIAS" ]]; then openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkhost "$API_ALIAS" >/dev/null || die 'Let’s Encrypt certificate does not cover API_DOMAIN_ALIAS.'; fi
+for unit in robux-api robux-web robux-worker robux-scheduler; do systemctl cat "$unit.service" >/dev/null 2>&1 || die "Missing $unit.service; run setup-vps.sh first."; done
+for pair in API_PORT:api WEB_PORT:web WORKER_HEALTH_PORT:worker SCHEDULER_HEALTH_PORT:scheduler; do
+  key=${pair%:*}; service=${pair#*:}; port="$(getv "$key")"
+  listeners="$(ss -H -ltnp "sport = :$port")"
+  if [[ -n "$listeners" ]]; then
+    pid="$(systemctl show -p MainPID --value "robux-$service.service")"
+    [[ "$pid" =~ ^[1-9][0-9]*$ && "$listeners" == *"pid=$pid,"* ]] || die "$key is occupied by another process; no service was restarted."
+  fi
+done
+for secret in postgres_password redis_password csrf_secret totp_encryption_key idempotency_encryption_key account_inventory_encryption_key; do [[ -s "$SECRETS_DIR/$secret.txt" ]] || die "Missing required secret file: $SECRETS_DIR/$secret.txt"; done
+BACKUP_DIR=/var/backups/robux
+install -d -o root -g root -m 0700 "$BACKUP_DIR"
+cp -a "$ENV_FILE" "$BACKUP_DIR/environment-$(date -u +%Y%m%dT%H%M%SZ).env"
+cp -a "$VHOST" "$BACKUP_DIR/nginx-robux-$(date -u +%Y%m%dT%H%M%SZ).conf"
+chmod 0600 "$BACKUP_DIR"/nginx-robux-*.conf
+if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if [[ "$PULL" == 1 ]]; then
+  [[ -z "$(git -c safe.directory="$ROOT_DIR" -C "$ROOT_DIR" status --porcelain --untracked-files=normal)" ]] || die 'Working tree has changes or untracked files; review them before deployment; this script will not overwrite local work.'
+  git -c safe.directory="$ROOT_DIR" -C "$ROOT_DIR" diff --quiet || die 'Working tree has tracked changes; review/stash them before pull.'
+  git -c safe.directory="$ROOT_DIR" -C "$ROOT_DIR" diff --cached --quiet || die 'Index has staged changes; deployment stopped.'
+  git -c safe.directory="$ROOT_DIR" -C "$ROOT_DIR" pull --ff-only
+  else info "Using the reviewed local checkout without pulling; revision $(git -C "$ROOT_DIR" rev-parse HEAD)."; fi
+else die 'Deployment directory is not a Git checkout.'; fi
+
+info 'Install locked dependencies and build all workspace packages.'
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+[[ -s "$ROOT_DIR/apps/api/dist/main.js" && -s "$ROOT_DIR/apps/api/dist/worker.js" && -s "$ROOT_DIR/apps/api/dist/scheduler.js" ]] || die 'API build artifacts are incomplete.'
+[[ -s "$ROOT_DIR/apps/web/.next/standalone/apps/web/server.js" ]] || die 'Next standalone server artifact is missing.'
+# Next standalone output excludes static assets and public files.
+cp -a "$ROOT_DIR/apps/web/.next/static" "$ROOT_DIR/apps/web/.next/standalone/apps/web/.next/"
+if [[ -d "$ROOT_DIR/apps/web/public" ]]; then cp -a "$ROOT_DIR/apps/web/public" "$ROOT_DIR/apps/web/.next/standalone/apps/web/"; fi
+runuser -u robux -- test -r "$ROOT_DIR/apps/api/dist/main.js" || die 'The robux service user cannot read the API build output.'
+runuser -u robux -- test -r "$ROOT_DIR/apps/web/.next/standalone/apps/web/server.js" || die 'The robux service user cannot read the Web build output.'
+
+info 'Validate production Compose configuration and start only private data services.'
+export SECRETS_DIR
 "${COMPOSE[@]}" config --quiet
-case "${DEPLOY_BUILD:-true}" in true|1|yes) "${COMPOSE[@]}" build --pull;; false|0|no) "${COMPOSE[@]}" pull;; *) die 'DEPLOY_BUILD must be true or false.';; esac
-"${COMPOSE[@]}" up -d --wait --wait-timeout "${DEPLOY_WAIT_SECONDS:-240}"
-NGINX_CID="$("${COMPOSE[@]}" ps -q nginx)"
-[[ -n "$NGINX_CID" ]] || die 'Robux Docker Nginx container was not created.'
-docker inspect --format '{{json .NetworkSettings.Ports}}' "$NGINX_CID" | grep -Fq "\"HostIp\":\"127.0.0.1\",\"HostPort\":\"$PORT\"" || die 'Robux Docker Nginx is not published exclusively on the selected localhost port.'
-EDGE_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -H "Host: $APP_HOST" "http://127.0.0.1:$PORT/")"
-[[ "$EDGE_CODE" =~ ^[23][0-9][0-9]$ ]] || die "Robux local edge failed (HTTP $EDGE_CODE)."
-"${COMPOSE[@]}" exec -T api node -e "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-"${COMPOSE[@]}" exec -T frontend node -e "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-"${COMPOSE[@]}" exec -T nginx wget -q -O /dev/null http://127.0.0.1:8081/nginx-health
-nginx -T >/tmp/nginx-before-robux.txt 2>&1
-if grep -Fq 'include /etc/nginx/sites-enabled/' /tmp/nginx-before-robux.txt; then
- VHOST=/etc/nginx/sites-available/robux.conf; LINK=/etc/nginx/sites-enabled/robux.conf; mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
-elif grep -Fq 'include /etc/nginx/conf.d/' /tmp/nginx-before-robux.txt; then VHOST=/etc/nginx/conf.d/robux.conf
-else die 'Unknown host Nginx include convention; no vhost written.'; fi
-if [[ -e "$VHOST" ]] && ! grep -Fq "$MARKER" "$VHOST"; then die "$VHOST is not managed by Robux."; fi
-for h in "$APP_HOST" "$API_HOST"; do
- if grep -E "^[[:space:]]*server_name[^;]*([[:space:]]|^)$h([[:space:];]|$)" /tmp/nginx-before-robux.txt | grep -q . \
-   && ! grep -Fq "$MARKER" /tmp/nginx-before-robux.txt; then die "$h already belongs to another vhost."; fi
-done
-LINK_CREATED=0
-if [[ -n "${LINK:-}" && -L "$LINK" && "$(readlink -f "$LINK")" != "$VHOST" ]]; then die "$LINK points to a different vhost; refusing to replace it."; fi
-if [[ -n "${LINK:-}" && -e "$LINK" && ! -L "$LINK" ]]; then die "$LINK is not the expected symlink; refusing to replace it."; fi
-EMAIL="$(getv CERTBOT_EMAIL)"; [[ "$EMAIL" == *@*.* ]] || die 'Set valid CERTBOT_EMAIL in .env.'
-mkdir -p "$WEBROOT/.well-known/acme-challenge"; chmod 0755 "$WEBROOT" "$WEBROOT/.well-known" "$WEBROOT/.well-known/acme-challenge"
-CERT="/etc/letsencrypt/live/$APP_HOST"; BACKUP=''
-if [[ -f "$VHOST" ]]; then BACKUP="$VHOST.backup.$(date -u +%Y%m%dT%H%M%SZ)"; cp -a "$VHOST" "$BACKUP"; fi
-write_http(){
-cat >"$VHOST" <<EOF
-$MARKER
-server {
- listen 80;
- listen [::]:80;
- server_name $APP_HOST $API_HOST;
- location ^~ /.well-known/acme-challenge/ { root $WEBROOT; default_type text/plain; try_files \$uri =404; }
- location / { return 301 https://\$host\$request_uri; }
-}
-EOF
-}
-write_https(){
-cat >"$VHOST" <<EOF
-$MARKER
-server {
- listen 80;
- listen [::]:80;
- server_name $APP_HOST $API_HOST;
- location ^~ /.well-known/acme-challenge/ { root $WEBROOT; default_type text/plain; try_files \$uri =404; }
- location / { return 301 https://\$host\$request_uri; }
-}
-server {
- listen 443 ssl http2;
- listen [::]:443 ssl http2;
- server_name $APP_HOST $API_HOST;
- ssl_certificate $CERT/fullchain.pem;
- ssl_certificate_key $CERT/privkey.pem;
- location / {
-  proxy_pass http://127.0.0.1:$PORT;
-  proxy_http_version 1.1;
-  proxy_set_header Host \$host;
-  proxy_set_header X-Real-IP \$remote_addr;
-  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto https;
-  proxy_set_header X-Request-Id \$request_id;
-  proxy_set_header Upgrade \$http_upgrade;
-  proxy_set_header Connection "upgrade";
-  proxy_read_timeout 60s;
- }
-}
-EOF
-}
-restore_vhost(){
- if [[ -n "$BACKUP" && -f "$BACKUP" ]]; then cp -a "$BACKUP" "$VHOST"; else rm -f "$VHOST"; fi
- if [[ "$LINK_CREATED" == 1 ]]; then rm -f "$LINK"; fi
- nginx -t && systemctl reload nginx
-}
-trap 's=$?; if ((s)) && { [[ "$LINK_CREATED" == 1 ]] || { [[ -n "${VHOST:-}" && -f "${VHOST:-}" ]] && grep -Fq "$MARKER" "$VHOST"; }; }; then restore_vhost; fi' EXIT
-if [[ -n "${LINK:-}" && ! -e "$LINK" && ! -L "$LINK" ]]; then ln -s "$VHOST" "$LINK"; LINK_CREATED=1; fi
-write_http; nginx -t || die 'nginx -t failed; restoring only Robux vhost.'
-systemctl reload nginx || die 'Host Nginx reload failed; host process was not stopped.'
-probe="robux-acme-$$"; printf 'robux-acme-ok\n' >"$WEBROOT/.well-known/acme-challenge/$probe"
-for h in "$APP_HOST" "$API_HOST"; do [[ "$(curl -fsS -H "Host: $h" "http://127.0.0.1/.well-known/acme-challenge/$probe")" == robux-acme-ok ]] || die "ACME route failed for $h."; done
-rm -f "$WEBROOT/.well-known/acme-challenge/$probe"
-CERT_VALID=0
-if [[ -s "$CERT/fullchain.pem" && -s "$CERT/privkey.pem" ]] \
-  && openssl x509 -in "$CERT/fullchain.pem" -noout -checkend 86400 >/dev/null 2>&1 \
-  && openssl x509 -in "$CERT/fullchain.pem" -noout -checkhost "$APP_HOST" >/dev/null 2>&1 \
-  && openssl x509 -in "$CERT/fullchain.pem" -noout -checkhost "$API_HOST" >/dev/null 2>&1; then CERT_VALID=1; fi
-if [[ "$CERT_VALID" != 1 ]]; then
-  domains=(-d "$APP_HOST"); [[ "$API_HOST" == "$APP_HOST" ]] || domains+=(-d "$API_HOST")
-  expand=(); [[ -s "$CERT/fullchain.pem" ]] && expand+=(--expand)
-  certbot certonly --non-interactive --agree-tos --email "$EMAIL" --webroot --webroot-path "$WEBROOT" --cert-name "$APP_HOST" --keep-until-expiring "${expand[@]}" "${domains[@]}"
+"${COMPOSE[@]}" up -d --wait --wait-timeout 180 postgres redis
+MIGRATION_STATE="$BACKUP_DIR/migrations-before-$(date -u +%Y%m%dT%H%M%SZ).txt"
+if [[ "$("${COMPOSE[@]}" exec -T postgres psql -U "$(getv POSTGRES_USER)" -d "$(getv POSTGRES_DB)" -Atc "SELECT to_regclass('public._prisma_migrations') IS NOT NULL")" == t ]]; then
+  "${COMPOSE[@]}" exec -T postgres psql -U "$(getv POSTGRES_USER)" -d "$(getv POSTGRES_DB)" -Atc "SELECT migration_name || ':' || coalesce(finished_at::text, 'pending') FROM _prisma_migrations ORDER BY started_at" >"$MIGRATION_STATE"
+else
+  printf 'No Prisma migration table before this deployment.\n' >"$MIGRATION_STATE"
 fi
-[[ -s "$CERT/fullchain.pem" && -s "$CERT/privkey.pem" ]] || die 'Let?s Encrypt certificate missing.'
-openssl x509 -in "$CERT/fullchain.pem" -noout -checkend 86400 >/dev/null || die 'Certificate is expired or expires within 24 hours.'
-openssl x509 -in "$CERT/fullchain.pem" -noout -checkhost "$APP_HOST" >/dev/null || die 'Certificate does not cover APP_DOMAIN.'
-openssl x509 -in "$CERT/fullchain.pem" -noout -checkhost "$API_HOST" >/dev/null || die 'Certificate does not cover API_DOMAIN.'
-KEY="$(readlink -f "$CERT/privkey.pem")"; [[ "$(stat -c '%a' "$KEY")" =~ ^(600|640)$ ]] || die 'Private key permissions must be 600 or 640.'
-write_https; nginx -t || die 'HTTPS nginx -t failed; restoring only Robux vhost.'
-systemctl reload nginx || die 'Host Nginx reload failed.'
-if systemctl list-unit-files --no-legend 2>/dev/null | grep -q '^certbot.timer'; then
- systemctl is-active --quiet certbot.timer || die 'Host Certbot timer is not active; enable it using the VPS standard Certbot setup.'
-elif systemctl list-unit-files --no-legend 2>/dev/null | grep -q '^snap.certbot.renew.timer'; then
- systemctl is-active --quiet snap.certbot.renew.timer || die 'Host Certbot renewal timer is not active.'
-else die 'Could not verify an existing host Certbot renewal timer; no duplicate timer was created.'; fi
-HOOK_DIR=/etc/letsencrypt/renewal-hooks/deploy
-HOOK="$HOOK_DIR/robux-host-nginx-reload"
-mkdir -p "$HOOK_DIR"
-if [[ -e "$HOOK" ]] && ! grep -Fq '# managed-by-robux-deploy' "$HOOK"; then die "$HOOK exists and is not managed by Robux."; fi
-if [[ ! -e "$HOOK" ]]; then
- cat >"$HOOK" <<'EOF'
-#!/usr/bin/env bash
-# managed-by-robux-deploy
-set -Eeuo pipefail
-nginx -t
+chmod 0600 "$MIGRATION_STATE"
+DATABASE_URL="$(python3 "$ROOT_DIR/scripts/production-database-url.py" "$ENV_FILE")"
+export DATABASE_URL
+corepack pnpm --filter @robux/api run db:migrate:deploy
+unset DATABASE_URL
+"${COMPOSE[@]}" exec -T postgres psql -U "$(getv POSTGRES_USER)" -d "$(getv POSTGRES_DB)" -Atc "SELECT migration_name || ':' || coalesce(finished_at::text, 'pending') FROM _prisma_migrations ORDER BY started_at" >"$BACKUP_DIR/migrations-after-$(date -u +%Y%m%dT%H%M%SZ).txt"
+chmod 0600 "$BACKUP_DIR"/migrations-after-*.txt
+install -d "$ROOT_DIR/apps/web/.next/standalone/apps/web/.next/cache"
+chown robux:robux "$ROOT_DIR/apps/web/.next/standalone/apps/web/.next/cache"
+chmod 0750 "$ROOT_DIR/apps/web/.next/standalone/apps/web/.next/cache"
+
+# Stop only this Compose project's old application containers; its persistent DB/Redis remain up.
+"${COMPOSE[@]}" stop api worker scheduler frontend nginx >/dev/null
+for unit in robux-api robux-worker robux-scheduler robux-web; do systemctl restart "$unit.service"; done
+
+wait_http(){ local url=$1 i; for ((i=0;i<30;i++)); do curl -fsS --max-time 3 "$url" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
+API_PORT="$(getv API_PORT)"; WEB_PORT="$(getv WEB_PORT)"
+wait_http "http://127.0.0.1:$API_PORT/health/ready" || die 'API loopback health check failed.'
+wait_http "http://127.0.0.1:$WEB_PORT/telegram-store" || die 'Web /telegram-store loopback health check failed.'
+for key in WORKER_HEALTH_PORT SCHEDULER_HEALTH_PORT; do
+  wait_http "http://127.0.0.1:$(getv "$key")/health/ready" || die "$key readiness failed."
+done
+
+nginx -t || die 'nginx -t failed; host Nginx was NOT reloaded.'
 systemctl reload nginx
-EOF
- chown root:root "$HOOK"; chmod 0750 "$HOOK"
+nginx -T >"$SNAPSHOT_DIR/nginx-after-robux-deploy.txt" 2>&1 || die 'Post-deploy nginx -T failed.'
+# No existing server_name may disappear during this deployment.
+grep -E '^[[:space:]]*server_name[[:space:]]' "$SNAPSHOT_DIR/nginx-before-robux-deploy.txt" | sed -E 's/^[[:space:]]*server_name[[:space:]]+//;s/;.*$//' | tr ' ' '\n' | sed '/^$/d' | sort -u >"$SNAPSHOT_DIR/robux-server-names-before.txt"
+grep -E '^[[:space:]]*server_name[[:space:]]' "$SNAPSHOT_DIR/nginx-after-robux-deploy.txt" | sed -E 's/^[[:space:]]*server_name[[:space:]]+//;s/;.*$//' | tr ' ' '\n' | sed '/^$/d' | sort -u >"$SNAPSHOT_DIR/robux-server-names-after.txt"
+if comm -23 "$SNAPSHOT_DIR/robux-server-names-before.txt" "$SNAPSHOT_DIR/robux-server-names-after.txt" | grep -q .; then
+  die 'Existing Nginx server_name entries changed or disappeared.'
 fi
-certbot renew --cert-name "$APP_HOST" --dry-run
-nginx -T >/tmp/nginx-after-robux.txt 2>&1 || die 'Post-deploy nginx -T failed.'
-for h in smartpad.web.id quranest.web.id ride.fajarhub.tech mbgcore.id ceotopup.com layartopup.com; do
- if grep -Fq "$h" /tmp/nginx-before-robux.txt; then
-  grep -Fq "$h" /tmp/nginx-after-robux.txt || die "Existing vhost $h disappeared."
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$h/" || true)"
-  [[ "$code" =~ ^[23][0-9][0-9]$ ]] || die "Existing project $h failed smoke test; stopping."
-  printf 'Existing project %s: HTTP %s\n' "$h" "$code"
- fi
+for host in smartpad.web.id quranest.web.id ride.fajarhub.tech mbgcore.id ceotopup.com layartopup.com; do
+  if grep -Fq "$host" "$SNAPSHOT_DIR/nginx-before-robux-deploy.txt"; then
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$host/" || true)"
+    [[ "$code" =~ ^[23][0-9][0-9]$ ]] || die "Existing project $host did not pass its HTTPS smoke test (HTTP ${code:-no response}). Stop and investigate."
+    printf 'Existing project %s: HTTP %s\n' "$host" "$code"
+  fi
 done
-http="$(curl -sS -o /dev/null -w '%{http_code}' "http://$APP_HOST/")"; [[ "$http" == 301 || "$http" == 308 ]] || die "HTTP redirect failed ($http)."
-mini="$(curl -sS -o /dev/null -w '%{http_code}' "https://$APP_HOST/telegram-store")"; [[ "$mini" =~ ^[23][0-9][0-9]$ ]] || die "Mini App failed ($mini)."
-api="$(curl -sS -o /dev/null -w '%{http_code}' "https://$API_HOST/health/live")"; [[ "$api" =~ ^[23][0-9][0-9]$ ]] || die "API failed ($api)."
-hook="$(curl -sS -o /dev/null -w '%{http_code}' "https://$APP_HOST/api/v1/telegram/webhook")"; [[ "$hook" =~ ^[1-5][0-9][0-9]$ ]] || die 'Webhook route returned no HTTP response.'
-TOKEN="$(getv TELEGRAM_BOT_TOKEN)"; SECRET="$(getv TELEGRAM_WEBHOOK_SECRET)"
-if [[ -n "$TOKEN" && -n "$SECRET" ]]; then
- URL="https://$APP_HOST/api/v1/telegram/webhook"
- response="$(curl -sS --config - 2>/dev/null <<EOF
+http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "http://$DOMAIN/")"
+[[ "$http_code" == 301 || "$http_code" == 308 ]] || die "HTTP to HTTPS redirect failed (HTTP $http_code)."
+web_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$DOMAIN/telegram-store")"
+[[ "$web_code" =~ ^[23][0-9][0-9]$ ]] || die "Public Telegram Mini App failed (HTTP $web_code)."
+api_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$DOMAIN/health/live")"
+[[ "$api_code" =~ ^2[0-9][0-9]$ ]] || die "Public API health failed (HTTP $api_code)."
+hook_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$DOMAIN/api/v1/telegram/webhook" || true)"
+[[ "$hook_code" == 404 || "$hook_code" == 405 ]] || die "Unexpected Telegram webhook GET probe status: $hook_code"
+TOKEN_FILE="$(getv TELEGRAM_BOT_TOKEN_FILE)"; SECRET_FILE="$(getv TELEGRAM_WEBHOOK_SECRET_FILE)"
+TOKEN_FILE="${TOKEN_FILE:-$SECRETS_DIR/telegram_bot_token.txt}"; SECRET_FILE="${SECRET_FILE:-$SECRETS_DIR/telegram_webhook_secret.txt}"
+if [[ -s "$TOKEN_FILE" && -s "$SECRET_FILE" ]]; then
+  TOKEN="$(tr -d '\r\n' <"$TOKEN_FILE")"; WEBHOOK_SECRET="$(tr -d '\r\n' <"$SECRET_FILE")"
+  [[ "$TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || die 'Invalid Telegram bot token format.'
+  [[ "$WEBHOOK_SECRET" =~ ^[A-Za-z0-9_-]{16,256}$ ]] || die 'Invalid Telegram webhook secret format.'
+  WEBHOOK_URL="https://$DOMAIN/api/v1/telegram/webhook"
+  response="$(curl -fsS --config - 2>/dev/null <<EOF
 url = "https://api.telegram.org/bot$TOKEN/setWebhook"
 request = "POST"
-data-urlencode = "url=$URL"
-data-urlencode = "secret_token=$SECRET"
+data-urlencode = "url=$WEBHOOK_URL"
+data-urlencode = "secret_token=$WEBHOOK_SECRET"
 EOF
-)" || die 'Telegram webhook registration failed.'
- printf '%s' "$response" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("ok") else 1)' || die 'Telegram rejected webhook.'
- response="$(curl -sS --config - 2>/dev/null <<EOF
+)" || die 'Telegram webhook registration failed; token was not printed.'
+  printf '%s' "$response" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("ok") else 1)' || die 'Telegram rejected webhook registration.'
+  response="$(curl -fsS --config - 2>/dev/null <<EOF
 url = "https://api.telegram.org/bot$TOKEN/getWebhookInfo"
 EOF
-)" || die 'Telegram webhook status query failed.'
- printf '%s' "$response" | python3 -c 'import json,sys; x=json.load(sys.stdin); r=x.get("result",{}); print("Webhook URL:",r.get("url","")); print("Last error:",r.get("last_error_message") or "none"); sys.exit(0 if x.get("ok") and r.get("url")==sys.argv[1] and not r.get("last_error_message") else 1)' "$URL" || die 'Telegram webhook verification failed.'
-else printf '\nNOTICE: Telegram token/secret absent; registration skipped.\n'; fi
-printf '\nNOTICE: Payment gateway forced to none; fulfillment provider remains none for staging.\n'
-printf 'Robux edge: 127.0.0.1:%s; Mini App: https://%s/telegram-store\n' "$PORT" "$APP_HOST"
-"${COMPOSE[@]}" ps --all
+)" || die 'Telegram webhook status query failed; token was not printed.'
+  printf '%s' "$response" | python3 -c 'import json,sys; x=json.load(sys.stdin).get("result",{}); sys.exit(0 if x.get("url")==sys.argv[1] and not x.get("last_error_message") else 1)' "$WEBHOOK_URL" || die 'Telegram webhook verification failed.'
+else
+  printf 'Telegram credentials are not configured; webhook registration skipped.\n'
+fi
+
+printf '\nDeployment complete. Domain: https://%s\nAPI: 127.0.0.1:%s\nWeb: 127.0.0.1:%s\nMini App: https://%s/telegram-store\n' "$DOMAIN" "$API_PORT" "$WEB_PORT" "$DOMAIN"
+printf 'Telegram webhook endpoint: https://%s/api/v1/telegram/webhook (HTTP %s to GET probe)\n' "$DOMAIN" "$hook_code"
+printf 'Payment/treasury flags were not enabled or changed. Review units with: systemctl status robux-api robux-web robux-worker robux-scheduler\n'

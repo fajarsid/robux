@@ -2,8 +2,8 @@
 #   development: docker compose -f docker-compose.yml -f docker-compose.dev.yml ...
 #   production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml ...
 #
-# Docker Compose manages every application process. No PM2. Only nginx publishes ports
-# (in the overrides). PostgreSQL and Redis live on the internal `data` network only.
+# Development uses Compose for application processes. Production deploy.sh uses systemd for
+# application processes and Compose only for PostgreSQL/Redis. No database ports are public.
 
 # The Compose project name comes from the override (robux-dev / robux-prod), so development
 # and production never share containers, networks or data volumes. See DEPLOYMENT.md §3.
