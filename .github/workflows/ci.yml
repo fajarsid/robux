@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (committable files + full history)
+        run: sh scripts/scan-secrets.sh
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: No PM2 (ADR-002)
+        run: sh scripts/check-no-pm2.sh
+      - name: Format
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Database integration tests (Testcontainers PostgreSQL, includes schema drift check)
+        run: pnpm --filter @robux/api test:integration
+      - name: Build
+        run: pnpm build
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare CI-only config and throwaway secrets
+        run: |
+          cp .env.example .env
+          sh scripts/generate-secrets.sh
+          sh scripts/generate-dev-cert.sh
+      - name: Validate Compose files
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config -q
+      - name: Build images
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+      - name: Start production stack and wait for health
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --wait --wait-timeout 180
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -a
+      - name: Smoke test through Nginx
+        run: |
+          curl -fsS -k --resolve app.localhost:443:127.0.0.1 https://app.localhost/ -o /dev/null
+          curl -fsS -k --resolve api.localhost:443:127.0.0.1 https://api.localhost/health/live
+          test "$(curl -s -k -o /dev/null -w '%{http_code}' --resolve api.localhost:443:127.0.0.1 https://api.localhost/health/ready)" = 404
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v

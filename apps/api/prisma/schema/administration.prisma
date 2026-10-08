@@ -1,0 +1,118 @@
+enum AuditAction {
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  TWO_FACTOR_ENABLED
+  TWO_FACTOR_FAILURE
+  RECOVERY_CODE_USED
+  PRODUCT_CREATED
+  PRODUCT_CHANGED
+  PRODUCT_ACTIVATED
+  PRODUCT_DEACTIVATED
+  PRICE_CHANGED
+  ORDER_RETRY
+  ORDER_CANCEL
+  ORDER_REFUND
+  MANUAL_FULFILLMENT
+  SOURCE_CREATED
+  SOURCE_CHANGED
+  SOURCE_ENABLED
+  SOURCE_DISABLED
+  SETTING_CHANGED
+  RECONCILIATION_RESOLVED
+  STAFF_ACCOUNT_CHANGED
+  INVENTORY_ITEM_CREATED
+  INVENTORY_ITEM_RESERVED
+  INVENTORY_ITEM_RELEASED
+  INVENTORY_ITEM_BLOCKED
+  INVENTORY_ITEM_SOLD
+  INVENTORY_ITEM_DELIVERED
+
+  @@map("audit_action")
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+
+  @@map("audit_result")
+}
+
+/// Append-only (trigger-enforced). before/after hold the changed fields only, never secrets.
+model AuditLog {
+  id           String      @id @default(uuid(7)) @db.Uuid
+  actorUserId  String?     @map("actor_user_id") @db.Uuid
+  actorType    ActorType   @map("actor_type")
+  actorRole    String?     @map("actor_role")
+  action       AuditAction
+  resourceType String      @map("resource_type")
+  resourceId   String?     @map("resource_id")
+  before       Json?
+  after        Json?
+  result       AuditResult
+  reason       String?
+  ipMasked     String?     @map("ip_masked")
+  requestId    String?     @map("request_id")
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([resourceType, resourceId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+enum ReconciliationKind {
+  PAYMENT_AMOUNT_MISMATCH
+  PAYMENT_STATUS_MISMATCH
+  FULFILLMENT_OUTCOME_UNKNOWN
+  PROVIDER_LEDGER_MISMATCH
+
+  @@map("reconciliation_kind")
+}
+
+enum ReconciliationStatus {
+  OPEN
+  RESOLVED
+
+  @@map("reconciliation_status")
+}
+
+model ReconciliationCase {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  orderId      String?              @map("order_id") @db.Uuid
+  paymentId    String?              @map("payment_id") @db.Uuid
+  attemptId    String?              @map("attempt_id") @db.Uuid
+  kind         ReconciliationKind
+  status       ReconciliationStatus @default(OPEN)
+  /// What was observed on each side when the mismatch was detected.
+  evidence     Json
+  resolution   String?
+  resolvedById String?              @map("resolved_by_id") @db.Uuid
+  resolvedAt   DateTime?            @map("resolved_at") @db.Timestamptz(3)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order      Order?              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  payment    Payment?            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  attempt    FulfillmentAttempt? @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  resolvedBy User?               @relation(fields: [resolvedById], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, kind], map: "reconciliation_cases_one_open_per_order_kind", where: raw("status = 'OPEN'"))
+  @@index([status, createdAt])
+  @@map("reconciliation_cases")
+}
+
+/// Runtime business settings changed by staff (audited), e.g. FULFILLMENT_ENABLED.
+model SystemSetting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@map("system_settings")
+}

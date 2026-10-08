@@ -1,0 +1,103 @@
+enum PaymentGatewayCode {
+  MOCK
+  DUITKU
+  TELEGRAM_STARS
+
+  @@map("payment_gateway_code")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+enum PaymentCurrency {
+  IDR
+  XTR
+
+  @@map("payment_currency")
+}
+
+model Payment {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  orderId           String             @map("order_id") @db.Uuid
+  gateway           PaymentGatewayCode
+  /// Our reference sent to the gateway.
+  merchantOrderId   String             @unique @map("merchant_order_id")
+  /// The gateway transaction reference, once known.
+  gatewayReference  String?            @map("gateway_reference")
+  paymentMethodCode String?            @map("payment_method_code")
+  amount            Decimal            @db.Decimal(18, 2)
+  currency          PaymentCurrency
+  gatewayFee        Decimal?           @map("gateway_fee") @db.Decimal(18, 2)
+  status            PaymentStatus      @default(PENDING)
+  /// Gateway status code exactly as reported, for support and reconciliation.
+  rawStatus         String?            @map("raw_status")
+  paymentUrl        String?            @map("payment_url")
+  qrPayload         String?            @map("qr_payload") @db.Text
+  expiresAt         DateTime?          @map("expires_at") @db.Timestamptz(3)
+  paidAt            DateTime?          @map("paid_at") @db.Timestamptz(3)
+  callbackCount     Int                @default(0) @map("callback_count")
+  lastVerifiedAt    DateTime?          @map("last_verified_at") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order               Order                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  reconciliationCases ReconciliationCase[]
+
+  @@unique([gateway, gatewayReference])
+  /// An order may have several payment attempts but at most one successful payment.
+  @@unique([orderId], map: "payments_one_paid_per_order", where: raw("status = 'PAID'"))
+  /// At most one live attempt per order; a new attempt needs the previous one closed first.
+  @@unique([orderId], map: "payments_one_pending_per_order", where: raw("status = 'PENDING'"))
+  @@index([orderId])
+  @@index([status, expiresAt])
+  @@map("payments")
+}
+
+enum WebhookSource {
+  MOCK_GATEWAY
+  DUITKU
+  TELEGRAM_STARS
+  FULFILLMENT_PROVIDER
+
+  @@map("webhook_source")
+}
+
+/// Payment settlement currency; order/catalog currency remains IDR.
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  REJECTED
+  FAILED
+
+  @@map("webhook_event_status")
+}
+
+/// Every inbound callback is persisted before processing; the unique key turns duplicates into no-ops.
+model WebhookEvent {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  source         WebhookSource
+  /// Unique event identity as defined by the sender documentation (for example reference + status).
+  eventKey       String             @map("event_key")
+  signatureValid Boolean            @map("signature_valid")
+  /// Redacted payload; secrets and signatures are stripped before storage.
+  payload        Json
+  payloadHash    String             @map("payload_hash") @db.Char(64)
+  status         WebhookEventStatus @default(RECEIVED)
+  errorCode      String?            @map("error_code")
+  receivedAt     DateTime           @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt    DateTime?          @map("processed_at") @db.Timestamptz(3)
+
+  @@unique([source, eventKey])
+  @@index([status, receivedAt])
+  @@map("webhook_events")
+}

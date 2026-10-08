@@ -1,0 +1,26 @@
+{
+  "name": "robux-fulfillment",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.12 <23"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter ./packages/** run build && pnpm -r --filter ./apps/** run build",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm --filter @robux/shared run build && pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "secrets:scan": "sh scripts/scan-secrets.sh",
+    "pm2:check": "sh scripts/check-no-pm2.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "globals": "^17.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

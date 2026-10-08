@@ -1,0 +1,11 @@
+title = "robux gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation placeholders and example env file"
+paths = [
+  '''\.env\.example$''',
+  '''pnpm-lock\.yaml$''',
+]

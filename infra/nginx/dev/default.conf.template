@@ -1,0 +1,24 @@
+# Development: plain HTTP on container port 8080 (published on 127.0.0.1 only).
+include /etc/nginx/snippets/http-common.conf;
+
+map $host $forwarded_proto { default http; }
+
+server {
+  listen 8080 default_server;
+  server_name _;
+  return 444;
+}
+
+server {
+  listen 8080;
+  server_name ${APP_DOMAIN};
+  include /etc/nginx/snippets/security-headers.conf;
+  include /etc/nginx/snippets/app-locations.conf;
+}
+
+server {
+  listen 8080;
+  server_name ${API_DOMAIN};
+  include /etc/nginx/snippets/security-headers.conf;
+  include /etc/nginx/snippets/api-locations.conf;
+}

@@ -1,0 +1,32 @@
+enum GamepassOrderStatus {
+  AWAITING_GAMEPASS
+  GAMEPASS_DETECTED
+  VALIDATING
+  FULFILLMENT_PENDING
+  FULFILLED
+  FAILED
+  CANCELLED
+
+  @@map("gamepass_order_status")
+}
+
+/// Delayed fulfillment flow (PRD §29–§30). Gross-up values come from the backend calculator.
+model GamepassOrder {
+  id              String              @id @default(uuid(7)) @db.Uuid
+  orderId         String              @unique @map("order_id") @db.Uuid
+  targetNetAmount Int                 @map("target_net_amount")
+  grossPrice      Int                 @map("gross_price")
+  feeRate         Decimal             @map("fee_rate") @db.Decimal(5, 4)
+  gamepassId      BigInt?             @map("gamepass_id")
+  status          GamepassOrderStatus @default(AWAITING_GAMEPASS)
+  detectedAt      DateTime?           @map("detected_at") @db.Timestamptz(3)
+  slaDueAt        DateTime            @map("sla_due_at") @db.Timestamptz(3)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([status, slaDueAt])
+  @@index([gamepassId])
+  @@map("gamepass_orders")
+}

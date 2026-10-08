@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+/*
+ * Semantic design tokens (ENGINEERING_STANDARDS.md §4.4). Components use only these names
+ * (bg-background, text-muted-foreground, border-border, bg-primary, ...), never raw colours.
+ * Dark is the default and the storefront theme (PRD §55). The staff console also offers light and
+ * system: `data-theme` on the console root selects the set.
+ */
+:root,
+[data-theme='dark'] {
+  --ds-background: #0a0a0b;
+  --ds-foreground: #f4f4f5;
+  --ds-surface: #121214;
+  --ds-surface-muted: #1a1a1d;
+  --ds-muted: #222226;
+  --ds-muted-foreground: #a1a1aa;
+  --ds-border: #2a2a2e;
+  --ds-primary: #f5b700;
+  --ds-primary-hover: #ffd84d;
+  --ds-primary-foreground: #121212;
+  --ds-primary-border: #a87500;
+  --ds-ring: #ffd84d;
+  --ds-success: #22c55e;
+  --ds-warning: #f59e0b;
+  --ds-danger: #f87171;
+  --ds-info: #60a5fa;
+  --ds-overlay: rgb(0 0 0 / 0.7);
+  --ds-shadow-overlay: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+/* Light values are listed twice: explicit choice, and "system" when the OS prefers light. */
+[data-theme='light'] {
+  --ds-background: #f6f6f7;
+  --ds-foreground: #18181b;
+  --ds-surface: #ffffff;
+  --ds-surface-muted: #f4f4f5;
+  --ds-muted: #ececef;
+  --ds-muted-foreground: #5b5b66;
+  --ds-border: #e2e2e6;
+  --ds-primary: #9a6b00;
+  --ds-primary-hover: #7d5600;
+  --ds-primary-foreground: #ffffff;
+  --ds-primary-border: #d4a72c;
+  --ds-ring: #9a6b00;
+  --ds-success: #15803d;
+  --ds-warning: #b45309;
+  --ds-danger: #dc2626;
+  --ds-info: #2563eb;
+  --ds-overlay: rgb(24 24 27 / 0.45);
+  --ds-shadow-overlay: 0 12px 32px -8px rgb(24 24 27 / 0.18);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme='system'] {
+    --ds-background: #f6f6f7;
+    --ds-foreground: #18181b;
+    --ds-surface: #ffffff;
+    --ds-surface-muted: #f4f4f5;
+    --ds-muted: #ececef;
+    --ds-muted-foreground: #5b5b66;
+    --ds-border: #e2e2e6;
+    --ds-primary: #9a6b00;
+    --ds-primary-hover: #7d5600;
+    --ds-primary-foreground: #ffffff;
+    --ds-primary-border: #d4a72c;
+    --ds-ring: #9a6b00;
+    --ds-success: #15803d;
+    --ds-warning: #b45309;
+    --ds-danger: #dc2626;
+    --ds-info: #2563eb;
+    --ds-overlay: rgb(24 24 27 / 0.45);
+    --ds-shadow-overlay: 0 12px 32px -8px rgb(24 24 27 / 0.18);
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-background: var(--ds-background);
+  --color-foreground: var(--ds-foreground);
+  --color-surface: var(--ds-surface);
+  --color-surface-muted: var(--ds-surface-muted);
+  --color-muted: var(--ds-muted);
+  --color-muted-foreground: var(--ds-muted-foreground);
+  --color-border: var(--ds-border);
+  --color-primary: var(--ds-primary);
+  --color-primary-hover: var(--ds-primary-hover);
+  --color-primary-foreground: var(--ds-primary-foreground);
+  --color-primary-border: var(--ds-primary-border);
+  --color-ring: var(--ds-ring);
+  --color-success: var(--ds-success);
+  --color-warning: var(--ds-warning);
+  --color-danger: var(--ds-danger);
+  --color-info: var(--ds-info);
+  --color-overlay: var(--ds-overlay);
+
+  /* Radius: controls (storefront inputs and buttons), cards (storefront), panel (console). */
+  --radius-control: 0.75rem;
+  --radius-card: 0.75rem;
+  --radius-panel: 0.5rem;
+
+  --shadow-glow: 0 0 24px -6px var(--ds-primary);
+  --shadow-overlay: var(--ds-shadow-overlay);
+
+  /* Smallest text step, used for section labels and captions. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Staff console typeface; `--font-poppins` is set by next/font in app/console/layout.tsx. */
+  --font-console:
+    var(--font-poppins), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html,
+body {
+  background: var(--ds-background);
+  color: var(--ds-foreground);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ds-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

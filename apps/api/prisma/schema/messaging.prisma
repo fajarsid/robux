@@ -1,0 +1,61 @@
+/// Written in the same transaction as the business change it announces; relayed to BullMQ by the worker.
+model OutboxEvent {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  eventType     String    @map("event_type")
+  payload       Json
+  requestId     String?   @map("request_id")
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  notifications Notification[]
+
+  @@index([publishedAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  DISCORD
+  EMAIL
+  IN_APP
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@map("notification_status")
+}
+
+model Notification {
+  id            String              @id @default(uuid(7)) @db.Uuid
+  outboxEventId String?             @map("outbox_event_id") @db.Uuid
+  orderId       String?             @map("order_id") @db.Uuid
+  channel       NotificationChannel
+  eventType     String              @map("event_type")
+  recipient     String
+  payload       Json
+  status        NotificationStatus  @default(PENDING)
+  attempts      Int                 @default(0)
+  lastError     String?             @map("last_error")
+  sentAt        DateTime?           @map("sent_at") @db.Timestamptz(3)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  outboxEvent OutboxEvent? @relation(fields: [outboxEventId], references: [id], onDelete: SetNull)
+  order       Order?       @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([outboxEventId, channel, recipient])
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@map("notifications")
+}

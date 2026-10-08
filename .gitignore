@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+
+# Generated
+apps/api/src/generated/
+
+# Environment and secrets (never commit)
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/README.md
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Logs and dumps
+*.log
+logs/
+*.dump
+*.sql.gz
+backups/
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+playwright-report/
+test-results/

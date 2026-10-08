@@ -1,0 +1,161 @@
+/// Transition rules live in the orders domain state machine (ARCHITECTURE.md §5.3).
+enum OrderStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAID
+  QUEUED
+  PROCESSING
+  FULFILLMENT_PENDING
+  FULFILLED
+  FAILED
+  RETRYING
+  FAILED_PERMANENTLY
+  PARTIALLY_FULFILLED
+  RECONCILIATION_REQUIRED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+
+  @@map("order_status")
+}
+
+enum OrderCancelReason {
+  CUSTOMER_REQUEST
+  PAYMENT_EXPIRED
+  STAFF_ACTION
+
+  @@map("order_cancel_reason")
+}
+
+model Order {
+  id                    String             @id @default(uuid(7)) @db.Uuid
+  /// Human reference RBX-YYYYMMDD-NNNNN. Not an access credential.
+  orderNumber           String             @unique @map("order_number")
+  /// SHA-256 hex of the guest tracking token; the plaintext token is never stored.
+  trackingTokenHash     String             @unique @map("tracking_token_hash") @db.Char(64)
+  idempotencyKey        String             @unique @map("idempotency_key")
+  userId                String?            @map("user_id") @db.Uuid
+  contactEmail          String             @map("contact_email")
+  status                OrderStatus        @default(CREATED)
+  fulfillmentMethod     FulfillmentMethod  @map("fulfillment_method")
+  /// Snapshot of the product line and what it implied at purchase (ADR-009); CHECK-consistent.
+  productLine           ProductLine        @default(ROBLOX_ROBUX) @map("product_line")
+  platform              Platform           @default(ROBLOX)
+  fulfillmentType       FulfillmentType    @default(BALANCE_PURCHASE) @map("fulfillment_type")
+  currency              Currency
+  subtotal              Decimal            @db.Decimal(18, 2)
+  discount              Decimal            @default(0) @db.Decimal(18, 2)
+  fee                   Decimal            @default(0) @db.Decimal(18, 2)
+  tax                   Decimal            @default(0) @db.Decimal(18, 2)
+  total                 Decimal            @db.Decimal(18, 2)
+  /// Resolved from the username by the Roblox identity integration (Phase 11) before payment.
+  recipientRobloxUserId BigInt?            @map("recipient_roblox_user_id")
+  /// Who receives a recipient fulfillment (Roblox or Telegram username, without "@"). NULL for
+  /// digital delivery, whose items are delivered to the order itself.
+  recipientType         RecipientType?     @default(ROBLOX_USER) @map("recipient_type")
+  recipientUsername     String?            @map("recipient_username")
+  recipientDisplayName  String?            @map("recipient_display_name")
+  cancelReason          OrderCancelReason? @map("cancel_reason")
+  /// Deadline fixed at creation from the payment window in force then; expiry cancels the order.
+  paymentExpiresAt      DateTime?          @map("payment_expires_at") @db.Timestamptz(3)
+  paidAt                DateTime?          @map("paid_at") @db.Timestamptz(3)
+  fulfilledAt           DateTime?          @map("fulfilled_at") @db.Timestamptz(3)
+  cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user                  User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items                 OrderItem[]
+  statusHistory         OrderStatusHistory[]
+  payments              Payment[]
+  fulfillmentOrder      FulfillmentOrder?
+  digitalInventoryItems DigitalInventoryItem[]
+  gamepassOrder         GamepassOrder?
+  notifications         Notification[]
+  reconciliationCases   ReconciliationCase[]
+  telegramOrder         TelegramOrder?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, updatedAt])
+  @@index([status, paymentExpiresAt])
+  @@index([contactEmail])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  orderId             String   @map("order_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  productPriceId      String   @map("product_price_id") @db.Uuid
+  productNameSnapshot String   @map("product_name_snapshot")
+  robuxAmount         Int      @map("robux_amount")
+  quantity            Int
+  currency            Currency
+  unitPriceSnapshot   Decimal  @map("unit_price_snapshot") @db.Decimal(18, 2)
+  unitCostSnapshot    Decimal  @map("unit_cost_snapshot") @db.Decimal(18, 2)
+  starsAmountSnapshot Int?     @map("stars_amount_snapshot")
+  lineSubtotal        Decimal  @map("line_subtotal") @db.Decimal(18, 2)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productPrice ProductPrice @relation(fields: [productPriceId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+/// Append-only (trigger-enforced). One row per transition, including NULL → CREATED.
+model OrderStatusHistory {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  orderId     String       @map("order_id") @db.Uuid
+  fromStatus  OrderStatus? @map("from_status")
+  toStatus    OrderStatus  @map("to_status")
+  actorType   ActorType    @map("actor_type")
+  actorUserId String?      @map("actor_user_id") @db.Uuid
+  reason      String?
+  metadata    Json?
+  requestId   String?      @map("request_id")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+/// Daily sequence for order numbers, in the business timezone (Asia/Jakarta).
+model OrderNumberCounter {
+  businessDate DateTime @id @map("business_date") @db.Date
+  lastValue    Int      @map("last_value")
+
+  @@map("order_number_counters")
+}
+
+enum IdempotencyKeyStatus {
+  IN_PROGRESS
+  COMPLETED
+
+  @@map("idempotency_key_status")
+}
+
+/// Request fingerprint and stored response, so a retried request replays the original result.
+model IdempotencyKey {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  scope          String
+  key            String
+  requestHash    String               @map("request_hash") @db.Char(64)
+  status         IdempotencyKeyStatus @default(IN_PROGRESS)
+  responseStatus Int?                 @map("response_status")
+  responseBody   Json?                @map("response_body")
+  resourceId     String?              @map("resource_id") @db.Uuid
+  expiresAt      DateTime             @map("expires_at") @db.Timestamptz(3)
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

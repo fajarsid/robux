@@ -1,0 +1,72 @@
+// Database design and conventions: docs/DATABASE.md
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Currency {
+  IDR
+
+  @@map("currency")
+}
+
+/// Who caused a state transition or an audited action.
+enum ActorType {
+  SYSTEM
+  CUSTOMER
+  STAFF
+  PAYMENT_GATEWAY
+  FULFILLMENT_PROVIDER
+  SCHEDULER
+
+  @@map("actor_type")
+}
+
+enum FulfillmentMethod {
+  INSTANT
+  GAMEPASS
+
+  @@map("fulfillment_method")
+}
+
+/// What a product is (ADR-009). Platform, fulfillment type, recipient kind and unit are derived
+/// from it in code (products/domain/product-line.ts); orders snapshot the derived values.
+enum ProductLine {
+  ROBLOX_ROBUX
+  TELEGRAM_PREMIUM
+  TELEGRAM_STARS
+  TELEGRAM_ACCOUNT
+
+  @@map("product_line")
+}
+
+enum Platform {
+  ROBLOX
+  TELEGRAM
+
+  @@map("platform")
+}
+
+/// How an order is fulfilled (ADR-009): items from inventory, delivery to a recipient identity,
+/// or a purchase funded from a source balance.
+enum FulfillmentType {
+  DIGITAL_DELIVERY
+  RECIPIENT_FULFILLMENT
+  BALANCE_PURCHASE
+
+  @@map("fulfillment_type")
+}
+
+enum RecipientType {
+  ROBLOX_USER
+  TELEGRAM_USER
+
+  @@map("recipient_type")
+}

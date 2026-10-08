@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Required by `pnpm deploy` (pnpm 10) to produce self-contained production bundles.
+injectWorkspacePackages: true
+
+onlyBuiltDependencies:
+  - argon2
+  - '@prisma/engines'
+  - '@swc/core'
+  - prisma
+  - sharp
+  - unrs-resolver

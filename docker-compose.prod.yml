@@ -1,0 +1,81 @@
+# Production override (single VPS behind Cloudflare). Images are built by CI and pulled by tag:
+#   IMAGE_TAG=<git-sha> docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Only nginx publishes ports. Docker restarts every long-running service (no PM2).
+
+# Own project name: volumes robux-prod_pgdata and robux-prod_redisdata belong to production only.
+name: robux-prod
+
+x-prod: &prod
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '5'
+
+services:
+  postgres:
+    <<: *prod
+    mem_limit: 1g
+
+  redis:
+    <<: *prod
+    mem_limit: 512m
+
+  migrate:
+    environment:
+      NODE_ENV: production
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  api:
+    <<: *prod
+    environment:
+      NODE_ENV: production
+    mem_limit: 512m
+    cpus: 1.0
+
+  worker:
+    <<: *prod
+    environment:
+      NODE_ENV: production
+      # No authorized provider exists yet (D-01): QUEUED orders wait, their FULFILLMENT_REQUESTED
+      # events stay unpublished. Changing this needs an approved provider adapter.
+      FULFILLMENT_PROVIDER: none
+    mem_limit: 512m
+    cpus: 1.0
+
+  scheduler:
+    <<: *prod
+    environment:
+      NODE_ENV: production
+    mem_limit: 256m
+    cpus: 0.5
+
+  frontend:
+    <<: *prod
+    environment:
+      NODE_ENV: production
+    mem_limit: 512m
+    cpus: 1.0
+
+  nginx:
+    <<: *prod
+    volumes:
+      - ./infra/nginx/prod:/etc/nginx/templates:ro
+    secrets:
+      - origin_cert
+      - origin_key
+    ports:
+      - '80:8080'
+      - '443:8443'
+    mem_limit: 128m
+
+secrets:
+  origin_cert:
+    file: ${SECRETS_DIR:-./secrets}/origin_cert.pem
+  origin_key:
+    file: ${SECRETS_DIR:-./secrets}/origin_key.pem

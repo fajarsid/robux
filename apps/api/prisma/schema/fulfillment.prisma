@@ -1,0 +1,150 @@
+enum FulfillmentOrderStatus {
+  PENDING
+  IN_PROGRESS
+  PARTIALLY_FULFILLED
+  FULFILLED
+  FAILED
+  RECONCILIATION_REQUIRED
+  CANCELLED
+
+  @@map("fulfillment_order_status")
+}
+
+model FulfillmentOrder {
+  id              String                 @id @default(uuid(7)) @db.Uuid
+  orderId         String                 @unique @map("order_id") @db.Uuid
+  method          FulfillmentMethod
+  requestedAmount Int                    @map("requested_amount")
+  fulfilledAmount Int                    @default(0) @map("fulfilled_amount")
+  /// Always requested - fulfilled (CHECK). Retries only ever target this amount.
+  remainingAmount Int                    @map("remaining_amount")
+  status          FulfillmentOrderStatus @default(PENDING)
+  /// Held by the one worker running this order's workflow (ARCHITECTURE.md §6.4); expires so a
+  /// crashed worker's order is picked up again. Both NULL or both set (CHECK).
+  leaseToken      String?                @map("lease_token") @db.Uuid
+  leaseExpiresAt  DateTime?              @map("lease_expires_at") @db.Timestamptz(3)
+  completedAt     DateTime?              @map("completed_at") @db.Timestamptz(3)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order       Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  attempts    FulfillmentAttempt[]
+  allocations FulfillmentAllocation[]
+
+  @@index([status, updatedAt])
+  @@map("fulfillment_orders")
+}
+
+/// UNKNOWN means the provider outcome cannot be determined (timeout, crash after send).
+/// An UNKNOWN attempt is resolved by verification or reconciliation, never by re-execution.
+enum FulfillmentAttemptStatus {
+  PENDING
+  EXECUTING
+  VERIFYING
+  SUCCEEDED
+  PARTIAL
+  FAILED_RETRYABLE
+  FAILED_PERMANENT
+  UNKNOWN
+
+  @@map("fulfillment_attempt_status")
+}
+
+model FulfillmentAttempt {
+  id                 String                   @id @default(uuid(7)) @db.Uuid
+  fulfillmentOrderId String                   @map("fulfillment_order_id") @db.Uuid
+  /// The allocation this attempt executes (Phase 10). Retries and the remainder after a partial
+  /// delivery execute the same allocation, so several attempts may share it.
+  allocationId       String?                  @map("allocation_id") @db.Uuid
+  attemptNumber      Int                      @map("attempt_number")
+  provider           String
+  requestedAmount    Int                      @map("requested_amount")
+  fulfilledAmount    Int                      @default(0) @map("fulfilled_amount")
+  /// Idempotency reference we send to the provider. Retries of an undelivered request reuse it;
+  /// at most one SUCCEEDED/PARTIAL attempt per reference (partial unique index).
+  clientReference    String                   @map("client_reference")
+  /// Provider transaction reference, once known.
+  externalReference  String?                  @map("external_reference")
+  status             FulfillmentAttemptStatus @default(PENDING)
+  errorCode          String?                  @map("error_code")
+  /// Sanitised summary only; raw provider responses are never stored here.
+  errorMessage       String?                  @map("error_message")
+  startedAt          DateTime?                @map("started_at") @db.Timestamptz(3)
+  verifyDeadlineAt   DateTime?                @map("verify_deadline_at") @db.Timestamptz(3)
+  completedAt        DateTime?                @map("completed_at") @db.Timestamptz(3)
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  fulfillmentOrder    FulfillmentOrder                  @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Restrict)
+  allocation          FulfillmentAllocation?            @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+  statusHistory       FulfillmentAttemptStatusHistory[]
+  reconciliationCases ReconciliationCase[]
+
+  @@unique([fulfillmentOrderId, attemptNumber])
+  @@unique([provider, externalReference])
+  @@unique([fulfillmentOrderId], map: "fulfillment_attempts_one_live_per_order", where: raw("(status = ANY (ARRAY['PENDING'::fulfillment_attempt_status, 'EXECUTING'::fulfillment_attempt_status, 'VERIFYING'::fulfillment_attempt_status, 'UNKNOWN'::fulfillment_attempt_status]))"))
+  @@unique([clientReference], map: "fulfillment_attempts_one_delivery_per_reference", where: raw("(status = ANY (ARRAY['SUCCEEDED'::fulfillment_attempt_status, 'PARTIAL'::fulfillment_attempt_status]))"))
+  @@index([status, verifyDeadlineAt])
+  @@index([clientReference])
+  @@index([allocationId])
+  @@map("fulfillment_attempts")
+}
+
+/// Append-only (trigger-enforced).
+model FulfillmentAttemptStatusHistory {
+  id         String                    @id @default(uuid(7)) @db.Uuid
+  attemptId  String                    @map("attempt_id") @db.Uuid
+  fromStatus FulfillmentAttemptStatus? @map("from_status")
+  toStatus   FulfillmentAttemptStatus  @map("to_status")
+  actorType  ActorType                 @map("actor_type")
+  reason     String?
+  metadata   Json?
+  requestId  String?                   @map("request_id")
+  createdAt  DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  attempt FulfillmentAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+
+  @@index([attemptId, createdAt])
+  @@map("fulfillment_attempt_status_history")
+}
+
+enum AllocationStatus {
+  RESERVED
+  CONSUMED
+  RELEASED
+
+  @@map("allocation_status")
+}
+
+/// Balance reserved on one source for one fulfillment order. RESERVED may already be partly
+/// consumed (partial delivery, remainder still expected); terminal rows satisfy
+/// consumed_amount + released_amount = amount (CHECK), so an allocation cannot be settled twice.
+model FulfillmentAllocation {
+  id                 String           @id @default(uuid(7)) @db.Uuid
+  fulfillmentOrderId String           @map("fulfillment_order_id") @db.Uuid
+  sourceId           String           @map("source_id") @db.Uuid
+  amount             Int
+  consumedAmount     Int              @default(0) @map("consumed_amount")
+  releasedAmount     Int              @default(0) @map("released_amount")
+  status             AllocationStatus @default(RESERVED)
+  currency           Currency
+  /// Source cost per Robux when the allocation was made; NULL if the source had none configured.
+  unitCostSnapshot   Decimal?         @map("unit_cost_snapshot") @db.Decimal(18, 4)
+  /// Routing algorithm that chose this source (e.g. SMART_V1) and why (ADR-007).
+  routingStrategy    String?          @map("routing_strategy")
+  routingDecision    Json?            @map("routing_decision")
+  reservedAt         DateTime         @default(now()) @map("reserved_at") @db.Timestamptz(3)
+  settledAt          DateTime?        @map("settled_at") @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  fulfillmentOrder      FulfillmentOrder       @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Restrict)
+  source                FulfillmentSource      @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  attempts              FulfillmentAttempt[]
+  balanceLogs           SourceBalanceLog[]
+  digitalInventoryItems DigitalInventoryItem[]
+
+  @@index([fulfillmentOrderId])
+  @@index([sourceId, status])
+  @@map("fulfillment_allocations")
+}

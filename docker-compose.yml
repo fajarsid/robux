@@ -1,0 +1,335 @@
+# Base service definitions (ADR-002). Always combined with an override:
+#   development: docker compose -f docker-compose.yml -f docker-compose.dev.yml ...
+#   production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml ...
+#
+# Docker Compose manages every application process. No PM2. Only nginx publishes ports
+# (in the overrides). PostgreSQL and Redis live on the internal `data` network only.
+
+# The Compose project name comes from the override (robux-dev / robux-prod), so development
+# and production never share containers, networks or data volumes. See DEPLOYMENT.md §3.
+
+x-app-env: &app-env
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: '5432'
+  POSTGRES_DB: ${POSTGRES_DB:-robux}
+  POSTGRES_USER: ${POSTGRES_USER:-robux}
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  REDIS_PASSWORD_FILE: /run/secrets/redis_password
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+  TELEGRAM_MINI_APP_URL: ${TELEGRAM_MINI_APP_URL:-}
+  TON_TREASURY_ENABLED: ${TON_TREASURY_ENABLED:-false}
+  TON_TREASURY_PRODUCTION_AUTHORIZED: ${TON_TREASURY_PRODUCTION_AUTHORIZED:-false}
+  BINANCE_WITHDRAWAL_ENABLED: ${BINANCE_WITHDRAWAL_ENABLED:-false}
+  TON_TREASURY_MIN_BALANCE_NANO: ${TON_TREASURY_MIN_BALANCE_NANO:-20000000000}
+  TON_TREASURY_TARGET_BALANCE_NANO: ${TON_TREASURY_TARGET_BALANCE_NANO:-100000000000}
+  TON_TREASURY_MAX_REFILL_NANO: ${TON_TREASURY_MAX_REFILL_NANO:-100000000000}
+  TON_TREASURY_DAILY_LIMIT_NANO: ${TON_TREASURY_DAILY_LIMIT_NANO:-100000000000}
+  TON_TREASURY_ALLOWED_ADDRESSES: ${TON_TREASURY_ALLOWED_ADDRESSES:-}
+
+x-hardening: &hardening
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-api-image: &api-image
+  image: ${IMAGE_REGISTRY:-localhost/robux}/robux-api:${IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: infra/docker/api.Dockerfile
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-robux}
+      POSTGRES_USER: ${POSTGRES_USER:-robux}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    user: redis
+    entrypoint: ['sh', '/usr/local/bin/start-redis.sh']
+    secrets:
+      - redis_password
+    volumes:
+      - redisdata:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./infra/redis/start-redis.sh:/usr/local/bin/start-redis.sh:ro
+    networks:
+      - data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'redis-cli --no-auth-warning -a "$$(cat /run/secrets/redis_password)" ping | grep -q PONG',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  migrate:
+    <<: [*api-image, *hardening]
+    command: ['with-database-url', 'node_modules/.bin/prisma', 'migrate', 'deploy']
+    environment:
+      <<: *app-env
+    secrets:
+      - postgres_password
+    networks:
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    <<: [*api-image, *hardening]
+    command: ['node', 'dist/main.js']
+    environment:
+      <<: *app-env
+      API_PORT: '4000'
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+      CSRF_SECRET_FILE: /run/secrets/csrf_secret
+      TOTP_ENCRYPTION_KEY_FILE: /run/secrets/totp_encryption_key
+      IDEMPOTENCY_ENCRYPTION_KEY_FILE: /run/secrets/idempotency_encryption_key
+      ACCOUNT_INVENTORY_ENCRYPTION_KEY_FILE: /run/secrets/account_inventory_encryption_key
+      PAYMENT_GATEWAY: ${PAYMENT_GATEWAY:-none}
+      PAYMENT_PROVIDER_STARS_ENABLED: ${PAYMENT_PROVIDER_STARS_ENABLED:-false}
+      TELEGRAM_STARS_PRODUCTION_AUTHORIZED: ${TELEGRAM_STARS_PRODUCTION_AUTHORIZED:-false}
+      DUITKU_ENVIRONMENT: ${DUITKU_ENVIRONMENT:-sandbox}
+      DUITKU_CALLBACK_URL: ${DUITKU_CALLBACK_URL:-}
+      DUITKU_RETURN_URL: ${DUITKU_RETURN_URL:-}
+      DUITKU_PAYMENT_METHODS: ${DUITKU_PAYMENT_METHODS:-}
+      DUITKU_CALLBACK_ALLOWED_IPS: ${DUITKU_CALLBACK_ALLOWED_IPS:-}
+      DUITKU_MERCHANT_CODE_FILE: /run/secrets/duitku_merchant_code
+      DUITKU_API_KEY_FILE: /run/secrets/duitku_api_key
+    secrets:
+      - postgres_password
+      - redis_password
+      - csrf_secret
+      - totp_encryption_key
+      - idempotency_encryption_key
+      - account_inventory_encryption_key
+      - duitku_merchant_code
+      - duitku_api_key
+    networks:
+      - app
+      - data
+      - egress
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 15s
+
+  worker:
+    <<: [*api-image, *hardening]
+    command: ['node', 'dist/worker.js']
+    environment:
+      <<: *app-env
+      WORKER_HEALTH_PORT: '4001'
+    secrets:
+      - postgres_password
+      - redis_password
+    networks:
+      - data
+      - egress
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "Promise.all(['live','ready'].map(p=>fetch('http://127.0.0.1:4001/health/'+p))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 30s
+
+  scheduler:
+    <<: [*api-image, *hardening]
+    command: ['node', 'dist/scheduler.js']
+    environment:
+      <<: *app-env
+      SCHEDULER_HEALTH_PORT: '4002'
+    secrets:
+      - postgres_password
+      - redis_password
+    networks:
+      - data
+      - egress
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "Promise.all(['live','ready'].map(p=>fetch('http://127.0.0.1:4002/health/'+p))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 15s
+
+  frontend:
+    <<: *hardening
+    image: ${IMAGE_REGISTRY:-localhost/robux}/robux-web:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    environment:
+      # Server-side rendering talks to the API over the internal `app` network.
+      API_INTERNAL_URL: http://api:4000
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache:uid=1000,gid=1000
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 15s
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.28-alpine
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-app.localhost}
+      API_DOMAIN: ${API_DOMAIN:-api.localhost}
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/snippets:/etc/nginx/snippets:ro
+    networks:
+      - edge
+      - app
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/nginx-health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /etc/nginx/conf.d:uid=101,gid=101
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 15s
+
+networks:
+  # Only network with published host ports; only nginx is attached.
+  edge:
+    driver: bridge
+  # nginx ↔ frontend ↔ api. No internet route.
+  app:
+    driver: bridge
+    internal: true
+  # Database and queue access. No internet route. Postgres/Redis attach here only.
+  data:
+    driver: bridge
+    internal: true
+  # Outbound HTTPS for processes that call external services. No published ports.
+  egress:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR:-./secrets}/postgres_password.txt
+  redis_password:
+    file: ${SECRETS_DIR:-./secrets}/redis_password.txt
+  csrf_secret:
+    file: ${SECRETS_DIR:-./secrets}/csrf_secret.txt
+  totp_encryption_key:
+    file: ${SECRETS_DIR:-./secrets}/totp_encryption_key.txt
+  idempotency_encryption_key:
+    file: ${SECRETS_DIR:-./secrets}/idempotency_encryption_key.txt
+  account_inventory_encryption_key:
+    file: ${SECRETS_DIR:-./secrets}/account_inventory_encryption_key.txt
+  # Values from the Duitku dashboard; generate-secrets.sh creates empty placeholders.
+  duitku_merchant_code:
+    file: ${SECRETS_DIR:-./secrets}/duitku_merchant_code.txt
+  duitku_api_key:
+    file: ${SECRETS_DIR:-./secrets}/duitku_api_key.txt

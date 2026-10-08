@@ -1,0 +1,766 @@
+{
+  "meta": {
+    "title": "Top Up Robux Otomatis",
+    "description": "Beli Robux dengan pembayaran aman dan pengiriman otomatis."
+  },
+  "nav": {
+    "brand": "Top Up Robux",
+    "checkOrder": "Cek Pesanan",
+    "login": "Masuk",
+    "account": "Akun Saya",
+    "products": "Produk"
+  },
+  "home": {
+    "eyebrow": "Pengiriman otomatis",
+    "title": "Top up Robux tanpa ribet.",
+    "subtitle": "Pilih paket, masukkan username Roblox, bayar, lalu pesanan diproses otomatis. Kamu bisa memantau statusnya kapan saja.",
+    "primaryCta": "Beli Robux",
+    "secondaryCta": "Cek Pesanan",
+    "steps": {
+      "title": "Cara membeli",
+      "account": "Masukkan username Roblox",
+      "product": "Pilih paket dan jumlah",
+      "payment": "Bayar dengan metode pilihanmu",
+      "delivery": "Pesanan diproses otomatis"
+    },
+    "safety": "Kami tidak pernah meminta password Roblox kamu."
+  },
+  "auth": {
+    "email": "Email",
+    "password": "Kata sandi",
+    "name": "Nama (opsional)",
+    "showPassword": "Tampilkan",
+    "hidePassword": "Sembunyikan",
+    "passwordHint": "Minimal 10 karakter. Gunakan kata sandi yang berbeda dari akun Roblox kamu.",
+    "notRoblox": "Ini akun untuk toko kami, bukan akun Roblox. Jangan pernah memasukkan password Roblox di sini.",
+    "login": {
+      "title": "Masuk",
+      "subtitle": "Masuk untuk melihat riwayat pesanan. Kamu tetap bisa membeli tanpa akun.",
+      "submit": "Masuk",
+      "noAccount": "Belum punya akun?",
+      "registerLink": "Daftar"
+    },
+    "register": {
+      "title": "Buat akun",
+      "subtitle": "Akun bersifat opsional dan memudahkan kamu melihat semua pesanan.",
+      "submit": "Daftar",
+      "hasAccount": "Sudah punya akun?",
+      "loginLink": "Masuk"
+    },
+    "logout": "Keluar",
+    "changePassword": {
+      "title": "Ubah kata sandi",
+      "current": "Kata sandi saat ini",
+      "new": "Kata sandi baru",
+      "submit": "Simpan kata sandi",
+      "success": "Kata sandi diperbarui. Sesi di perangkat lain telah diakhiri."
+    }
+  },
+  "admin": {
+    "login": {
+      "title": "Masuk Konsol",
+      "subtitle": "Khusus staf. Jika verifikasi dua langkah aktif, kode akan diminta setelah kata sandi.",
+      "submit": "Masuk"
+    },
+    "twoFactor": {
+      "verifyTitle": "Verifikasi dua langkah",
+      "verifySubtitle": "Masukkan 6 digit kode dari aplikasi authenticator.",
+      "code": "Kode verifikasi",
+      "submit": "Verifikasi",
+      "useRecovery": "Gunakan kode pemulihan",
+      "useTotp": "Gunakan kode authenticator",
+      "recoveryCode": "Kode pemulihan",
+      "enrollTitle": "Aktifkan verifikasi dua langkah",
+      "enrollSubtitle": "Tambahkan akun ini ke aplikasi authenticator (misalnya Google Authenticator atau Authy), lalu masukkan kode yang muncul.",
+      "start": "Mulai aktivasi",
+      "secretLabel": "Kunci untuk dimasukkan manual",
+      "openApp": "Buka di aplikasi authenticator",
+      "activate": "Aktifkan",
+      "recoveryTitle": "Simpan kode pemulihan",
+      "recoveryBody": "Setiap kode hanya bisa dipakai satu kali jika kamu kehilangan akses ke aplikasi authenticator. Kode ini tidak akan ditampilkan lagi.",
+      "recoveryDone": "Saya sudah menyimpannya"
+    }
+  },
+  "account": {
+    "title": "Akun Saya",
+    "profile": "Profil",
+    "orders": "Riwayat pesanan",
+    "noOrders": "Belum ada pesanan di akun ini.",
+    "memberSince": "Bergabung {date}",
+    "viewOrder": "Lihat detail"
+  },
+  "order": {
+    "number": "Nomor pesanan",
+    "total": "Total",
+    "recipient": "Akun Roblox tujuan",
+    "items": "Rincian",
+    "timeline": "Status",
+    "createdAt": "Dibuat",
+    "robux": "{amount} Robux",
+    "notFoundTitle": "Pesanan tidak ditemukan",
+    "notFoundBody": "Periksa kembali tautan pelacakan dari email atau halaman konfirmasi pesananmu.",
+    "stage": {
+      "AWAITING_PAYMENT": "Menunggu pembayaran",
+      "PROCESSING": "Sedang diproses",
+      "COMPLETED": "Selesai",
+      "CANCELLED": "Dibatalkan",
+      "REFUND_IN_PROGRESS": "Pengembalian dana diproses",
+      "REFUNDED": "Dana dikembalikan"
+    },
+    "lookupTitle": "Cek pesanan",
+    "lookupBody": "Buka tautan pelacakan yang kamu terima di halaman konfirmasi atau email setelah memesan. Punya akun? Masuk untuk melihat semua pesananmu.",
+    "lookupLogin": "Masuk ke akun",
+    "payBefore": "Bayar sebelum",
+    "payment": "Rincian pembayaran",
+    "cancel": {
+      "button": "Batalkan pesanan",
+      "title": "Batalkan pesanan ini?",
+      "body": "Pesanan yang dibatalkan tidak dapat dilanjutkan. Kamu bisa membuat pesanan baru kapan saja.",
+      "confirm": "Ya, batalkan",
+      "keep": "Jangan batalkan"
+    }
+  },
+  "errors": {
+    "INVALID_CREDENTIALS": "Email atau kata sandi salah.",
+    "ACCOUNT_UNAVAILABLE": "Akun tidak dapat dibuat dengan data ini. Coba masuk atau gunakan email lain.",
+    "INVALID_TWO_FACTOR_CODE": "Kode verifikasi tidak valid. Coba lagi.",
+    "TWO_FACTOR_REQUIRED": "Verifikasi dua langkah diperlukan.",
+    "RATE_LIMITED": "Terlalu banyak percobaan. Tunggu beberapa saat lalu coba lagi.",
+    "VALIDATION_FAILED": "Periksa kembali data yang kamu isi.",
+    "CSRF_REJECTED": "Sesi kamu berubah. Muat ulang halaman lalu coba lagi.",
+    "UNAUTHORIZED": "Silakan masuk terlebih dahulu.",
+    "FORBIDDEN": "Kamu tidak memiliki akses ke halaman ini.",
+    "NETWORK_ERROR": "Tidak dapat terhubung. Periksa koneksi internet kamu.",
+    "generic": "Terjadi kesalahan. Silakan coba lagi.",
+    "PRICE_VERSION_CONFLICT": "Harga sudah diubah oleh orang lain. Muat ulang halaman lalu coba lagi.",
+    "PRICING_RULE_VIOLATION": "Harga tidak valid. Periksa harga jual dan harga modal.",
+    "INVALID_PRODUCT_STATE": "Tindakan ini tidak dapat dilakukan pada produk dalam kondisi sekarang.",
+    "QUANTITY_OUT_OF_RANGE": "Jumlah di luar batas yang diizinkan.",
+    "NOT_FOUND": "Data tidak ditemukan.",
+    "PRODUCT_NOT_FOUND": "Paket tidak ditemukan.",
+    "PRODUCT_INACTIVE": "Paket ini sedang tidak dijual.",
+    "PRODUCT_UNAVAILABLE": "Stok paket ini sedang tidak cukup. Coba jumlah lebih kecil atau paket lain.",
+    "PRICE_CHANGED": "Harga paket berubah. Periksa total terbaru lalu coba lagi.",
+    "IDEMPOTENCY_KEY_REQUIRED": "Permintaan tidak lengkap. Muat ulang halaman lalu coba lagi.",
+    "DUPLICATE_IDEMPOTENCY_KEY": "Permintaan ini sudah dipakai untuk pesanan lain. Muat ulang halaman lalu coba lagi.",
+    "ORDER_NOT_FOUND": "Pesanan tidak ditemukan.",
+    "ORDER_NOT_CANCELLABLE": "Pesanan ini tidak dapat dibatalkan lagi.",
+    "ORDER_CREATION_FAILED": "Pesanan belum dapat dibuat. Silakan coba lagi.",
+    "STAFF_CANNOT_ORDER": "Akun staf tidak dapat membuat pesanan.",
+    "PAYLOAD_TOO_LARGE": "Data yang dikirim terlalu besar.",
+    "INVALID_ORDER_TRANSITION": "Status pesanan tidak dapat diubah.",
+    "INVALID_SOURCE_STATE": "Tindakan ini tidak dapat dilakukan pada sumber dalam kondisi sekarang."
+  },
+  "notFound": {
+    "title": "Halaman tidak ditemukan",
+    "body": "Halaman yang kamu cari belum tersedia atau sudah dipindahkan.",
+    "back": "Kembali ke beranda"
+  },
+  "products": {
+    "title": "Pilih produk digital",
+    "subtitle": "Harga sudah termasuk semua biaya. Total dihitung oleh sistem kami sesuai jumlah yang kamu pilih.",
+    "empty": "Belum ada produk yang tersedia saat ini.",
+    "robux": "{amount} Robux",
+    "quantity": "Jumlah",
+    "decrease": "Kurangi jumlah",
+    "increase": "Tambah jumlah",
+    "total": "Total",
+    "totalRobux": "Kamu menerima {amount} Robux",
+    "calculating": "Menghitung…",
+    "buy": "Beli Sekarang",
+    "perUnit": "per paket",
+    "method": {
+      "INSTANT": "Instan",
+      "GAMEPASS": "Gamepass (5–7 hari)"
+    },
+    "availability": {
+      "AVAILABLE": "Tersedia",
+      "OUT_OF_STOCK": "Stok habis"
+    },
+    "status": {
+      "ACTIVE": "Aktif",
+      "INACTIVE": "Nonaktif"
+    },
+    "productLine": {
+      "ROBLOX_ROBUX": "Robux",
+      "TELEGRAM_PREMIUM": "Telegram Premium",
+      "TELEGRAM_STARS": "Telegram Stars",
+      "TELEGRAM_ACCOUNT": "Akun Telegram"
+    },
+    "platform": {
+      "ROBLOX": "Roblox",
+      "TELEGRAM": "Telegram"
+    },
+    "fulfillmentType": {
+      "DIGITAL_DELIVERY": "Pengiriman digital dari stok",
+      "RECIPIENT_FULFILLMENT": "Dikirim ke penerima",
+      "BALANCE_PURCHASE": "Pembelian dari saldo sumber"
+    },
+    "unit": {
+      "ROBUX": "{amount} Robux",
+      "PREMIUM_MONTH": "{amount} bulan",
+      "STAR": "{amount} Stars",
+      "ACCOUNT": "{amount} akun"
+    }
+  },
+  "pricing": {
+    "historyTitle": "Riwayat harga",
+    "version": "Versi",
+    "status": "Status",
+    "sellingPrice": "Harga jual",
+    "costPrice": "Harga modal",
+    "margin": "Margin",
+    "effectiveFrom": "Berlaku sejak",
+    "versionStatus": {
+      "ACTIVE": "Berlaku",
+      "SCHEDULED": "Terjadwal",
+      "SUPERSEDED": "Digantikan"
+    },
+    "newPriceTitle": "Ubah harga",
+    "newPriceHint": "Perubahan membuat versi harga baru. Pesanan yang sudah ada tetap memakai harga lamanya.",
+    "scheduleLabel": "Berlaku mulai (opsional)",
+    "scheduleHint": "Kosongkan agar berlaku sekarang.",
+    "submit": "Simpan harga baru",
+    "confirmTitle": "Konfirmasi perubahan harga",
+    "confirmBody": "Harga jual menjadi {selling} dengan harga modal {cost}. Versi {version} akan dibuat.",
+    "belowCostWarning": "Harga jual lebih rendah dari harga modal. Setiap penjualan akan merugi.",
+    "confirm": "Ya, simpan",
+    "cancel": "Batal",
+    "saved": "Harga baru tersimpan.",
+    "costHidden": "Tidak ditampilkan untuk peran kamu.",
+    "breakdown": {
+      "unitPrice": "Harga per paket",
+      "quantity": "Jumlah",
+      "subtotal": "Subtotal",
+      "discount": "Diskon",
+      "fee": "Biaya layanan",
+      "tax": "Pajak",
+      "total": "Total bayar",
+      "currency": "Mata uang"
+    },
+    "historyHint": "Versi harga tidak dapat diubah; setiap perubahan membuat versi baru.",
+    "overview": {
+      "title": "Harga",
+      "subtitle": "Harga yang berlaku untuk setiap produk. Ubah harga dari halaman produk.",
+      "product": "Produk",
+      "noPrice": "Belum ada harga berlaku",
+      "empty": "Belum ada produk.",
+      "loadFailed": "Data harga gagal dimuat. Muat ulang halaman untuk mencoba lagi."
+    }
+  },
+  "adminProducts": {
+    "title": "Produk",
+    "newProduct": "Produk baru",
+    "columns": {
+      "name": "Nama",
+      "robux": "Jumlah",
+      "method": "Metode",
+      "price": "Harga berlaku",
+      "status": "Status",
+      "platform": "Platform",
+      "line": "Jenis"
+    },
+    "noPrice": "Belum ada harga berlaku",
+    "manage": "Kelola",
+    "createTitle": "Buat produk baru",
+    "createHint": "Produk baru dibuat nonaktif. Aktifkan setelah data dan harganya benar.",
+    "fields": {
+      "slug": "Slug (URL)",
+      "slugHint": "Huruf kecil, angka dan tanda hubung. Tidak dapat diubah setelah dibuat.",
+      "name": "Nama produk",
+      "robuxAmount": "Jumlah per paket",
+      "method": "Metode pengiriman",
+      "minQuantity": "Jumlah minimum",
+      "maxQuantity": "Jumlah maksimum",
+      "displayOrder": "Urutan tampil",
+      "sellingPrice": "Harga jual (Rp)",
+      "costPrice": "Harga modal (Rp)",
+      "starsAmount": "Harga Telegram Stars (XTR)",
+      "starsAmountHint": "Opsional; nilai XTR ditetapkan secara terpisah dan tidak dikonversi dari Rupiah.",
+      "robuxAmountHint": "Dalam satuan jenis produk: Robux, bulan Premium, Stars atau akun.",
+      "productLine": "Jenis produk",
+      "platform": "Platform",
+      "fulfillmentType": "Tipe pemenuhan"
+    },
+    "create": "Buat produk",
+    "editTitle": "Edit produk",
+    "save": "Simpan perubahan",
+    "saved": "Perubahan tersimpan.",
+    "lockedHint": "Jumlah Robux dan metode terkunci karena produk sudah memiliki pesanan.",
+    "statusTitle": "Status penjualan",
+    "activate": "Aktifkan",
+    "deactivate": "Nonaktifkan",
+    "activateConfirm": "Produk akan tampil dan dapat dibeli pelanggan dengan harga yang berlaku.",
+    "deactivateConfirm": "Produk tidak akan tampil lagi untuk pelanggan. Pesanan yang sudah ada tidak terpengaruh.",
+    "subtitle": "Paket Robux yang dijual, status penjualan dan harga yang berlaku.",
+    "loadFailed": "Daftar produk gagal dimuat. Muat ulang halaman untuk mencoba lagi.",
+    "empty": "Belum ada produk.",
+    "robuxAmount": "{amount} Robux",
+    "activated": "Produk diaktifkan.",
+    "deactivated": "Produk dinonaktifkan.",
+    "view": "Lihat detail",
+    "edit": "Edit produk",
+    "actionsFor": "Tindakan untuk {name}",
+    "created": "Produk dibuat (nonaktif).",
+    "detailsTitle": "Detail produk",
+    "methodRobuxOnly": "Gamepass hanya untuk Robux."
+  },
+  "adminOrders": {
+    "title": "Pesanan",
+    "subtitle": "Cari, saring, dan periksa pesanan pelanggan.",
+    "loading": "Memuat pesanan…",
+    "status": {
+      "CREATED": "Dibuat",
+      "PAYMENT_PENDING": "Menunggu pembayaran",
+      "PAID": "Dibayar",
+      "QUEUED": "Dalam antrean",
+      "PROCESSING": "Diproses",
+      "FULFILLMENT_PENDING": "Menunggu pengiriman",
+      "FULFILLED": "Terkirim",
+      "FAILED": "Gagal",
+      "RETRYING": "Dicoba ulang",
+      "FAILED_PERMANENTLY": "Gagal permanen",
+      "PARTIALLY_FULFILLED": "Terkirim sebagian",
+      "RECONCILIATION_REQUIRED": "Perlu rekonsiliasi",
+      "CANCELLED": "Dibatalkan",
+      "REFUND_PENDING": "Pengembalian dana diproses",
+      "REFUNDED": "Dana dikembalikan"
+    },
+    "actor": {
+      "SYSTEM": "Sistem",
+      "CUSTOMER": "Pelanggan",
+      "STAFF": "Staf",
+      "PAYMENT_GATEWAY": "Gateway pembayaran",
+      "FULFILLMENT_PROVIDER": "Penyedia pengiriman",
+      "SCHEDULER": "Penjadwal otomatis"
+    },
+    "cancelReason": {
+      "CUSTOMER_REQUEST": "Permintaan pelanggan",
+      "PAYMENT_EXPIRED": "Batas waktu pembayaran terlewati",
+      "STAFF_ACTION": "Dibatalkan oleh staf"
+    },
+    "tabs": {
+      "label": "Status cepat",
+      "all": "Semua"
+    },
+    "filters": {
+      "label": "Filter pesanan",
+      "search": "Cari",
+      "searchPlaceholder": "Nomor pesanan atau email",
+      "status": "Status pesanan",
+      "paymentStatus": "Status pembayaran",
+      "any": "Semua",
+      "createdFrom": "Dari tanggal",
+      "createdTo": "Sampai tanggal",
+      "apply": "Terapkan",
+      "reset": "Hapus filter",
+      "show": "Tampilkan",
+      "hide": "Sembunyikan",
+      "applied": "Filter aktif"
+    },
+    "columns": {
+      "order": "Pesanan",
+      "customer": "Pelanggan",
+      "product": "Produk",
+      "total": "Total",
+      "payment": "Pembayaran",
+      "status": "Status",
+      "created": "Dibuat"
+    },
+    "guest": "Tamu",
+    "registered": "Pelanggan terdaftar",
+    "robux": "{amount} Robux",
+    "noPayment": "Belum ada",
+    "openOrder": "Buka pesanan {orderNumber}",
+    "empty": {
+      "title": "Tidak ada pesanan.",
+      "status": "Tidak ada pesanan berstatus {status}.",
+      "filtered": "Coba ubah filter atau kata kunci pencarian.",
+      "none": "Pesanan akan muncul di sini setelah pelanggan memesan."
+    },
+    "unavailable": "Server belum menyediakan daftar pesanan untuk konsol. Detail pesanan tetap dapat dibuka melalui tautannya.",
+    "loadFailed": "Daftar pesanan gagal dimuat. Muat ulang halaman untuk mencoba lagi.",
+    "copy": {
+      "label": "Salin nomor pesanan",
+      "action": "Salin",
+      "copied": "Tersalin",
+      "failed": "Gagal menyalin"
+    },
+    "cancel": {
+      "button": "Batalkan pesanan",
+      "title": "Batalkan pesanan?",
+      "body": "Pesanan {orderNumber} akan dibatalkan dan tidak dapat dilanjutkan.",
+      "reason": "Alasan pembatalan",
+      "reasonHint": "Wajib, 3–500 karakter. Dicatat di log audit.",
+      "reasonInvalid": "Isi alasan 3–500 karakter.",
+      "confirm": "Batalkan pesanan",
+      "keep": "Jangan batalkan",
+      "success": "Pesanan berhasil dibatalkan."
+    },
+    "detail": {
+      "loading": "Memuat detail pesanan…",
+      "createdAt": "Dibuat {date}",
+      "refresh": "Muat ulang",
+      "refreshing": "Memuat…",
+      "itemsTitle": "Rincian pesanan",
+      "perPackage": "{amount} Robux per paket",
+      "customerTitle": "Pelanggan",
+      "email": "Email kontak",
+      "accountType": "Jenis akun",
+      "recipient": "Penerima",
+      "robloxUserId": "ID pengguna Roblox",
+      "notVerified": "Belum diverifikasi",
+      "pricingTitle": "Rincian harga",
+      "paymentTitle": "Pembayaran",
+      "paymentStatus": "Status pembayaran",
+      "payBefore": "Batas pembayaran",
+      "paymentUnavailable": "Data pembayaran belum tersedia untuk pesanan ini.",
+      "timelineTitle": "Riwayat status",
+      "timelineEmpty": "Belum ada riwayat status.",
+      "actor": "Oleh {actor}",
+      "cancelReason": "Alasan pembatalan",
+      "actionsTitle": "Tindakan",
+      "noActions": "Tidak ada tindakan yang tersedia untuk pesanan ini.",
+      "recipientNone": "Tidak ada, dikirim ke pesanan",
+      "productLine": "Jenis produk",
+      "fulfillmentType": "Tipe pemenuhan"
+    },
+    "unavailableTitle": "Daftar pesanan belum tersedia"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "product": "Paket",
+    "summary": "Ringkasan pesanan",
+    "calculating": "Menghitung total…",
+    "robloxUsername": "Username Roblox penerima",
+    "robloxUsernameHint": "3–20 huruf, angka, atau satu garis bawah. Pastikan ejaannya benar.",
+    "telegramUsername": "Username Telegram penerima",
+    "telegramUsernameHint": "Masukkan username Telegram, dengan atau tanpa @.",
+    "contactEmail": "Email",
+    "contactEmailHint": "Kami kirim informasi pesanan ke email ini.",
+    "signedInAs": "Pesanan dicatat di akun {email}.",
+    "confirmDetails": "Saya sudah memeriksa informasi penerima, jumlah, dan total pembayaran di atas.",
+    "placeOrder": "Buat pesanan",
+    "unavailableTitle": "Paket tidak tersedia",
+    "unavailableBody": "Paket ini tidak ditemukan atau sedang tidak tersedia. Pilih paket lain.",
+    "backToProducts": "Lihat paket lain",
+    "errors": {
+      "priceChanged": "Harga paket baru saja berubah. Periksa total terbaru, centang konfirmasi lagi, lalu buat pesanan.",
+      "staffCannotOrder": "Akun staf tidak dapat membuat pesanan. Keluar terlebih dahulu atau gunakan akun pelanggan."
+    },
+    "confirmation": {
+      "title": "Pesanan dibuat",
+      "body": "Pesananmu tersimpan dan sedang menunggu pembayaran.",
+      "orderNumber": "Nomor pesanan",
+      "recipient": "Akun Roblox tujuan",
+      "payBefore": "Bayar sebelum",
+      "payNotice": "Pesanan ini belum dibayar dan Robux belum dikirim. Selesaikan pembayaran sebelum batas waktu.",
+      "saveLink": "Simpan tautan pelacakan pesanan ini. Tautan ini hanya ditampilkan sekali dan menjadi satu-satunya cara melihat pesanan tanpa akun.",
+      "track": "Lacak pesanan",
+      "viewInAccount": "Lihat di akun"
+    }
+  },
+  "payment": {
+    "title": "Pembayaran",
+    "payNow": "Bayar sekarang",
+    "orderNumber": "Nomor pesanan",
+    "viewOrder": "Lihat pesanan",
+    "loading": "Memuat status pembayaran…",
+    "retryLoad": "Coba lagi",
+    "login": "Masuk ke akun",
+    "status": {
+      "PENDING": "Menunggu pembayaran",
+      "PAID": "Dibayar",
+      "FAILED": "Gagal",
+      "EXPIRED": "Kedaluwarsa",
+      "CANCELLED": "Dibatalkan",
+      "REFUND_PENDING": "Pengembalian dana diproses",
+      "REFUNDED": "Dana dikembalikan"
+    },
+    "start": {
+      "title": "Pilih metode pembayaran",
+      "body": "Total pembayaran dihitung oleh sistem kami dan tidak berubah karena pilihan di halaman ini.",
+      "methods": "Metode pembayaran",
+      "loadingMethods": "Memuat metode pembayaran…",
+      "noMethods": "Belum ada metode pembayaran yang tersedia untuk pesanan ini. Coba lagi beberapa saat lagi.",
+      "methodUnavailable": "Tidak tersedia",
+      "reloadMethods": "Muat ulang metode",
+      "submit": "Bayar sekarang",
+      "submitting": "Membuat pembayaran…",
+      "showExisting": "Perbarui status"
+    },
+    "pending": {
+      "title": "Menunggu pembayaran",
+      "body": "Selesaikan pembayaran sebelum waktu habis.",
+      "amount": "Jumlah yang harus dibayar",
+      "method": "Metode",
+      "deadline": "Batas pembayaran",
+      "remaining": "Sisa waktu",
+      "timeUp": "Waktu pembayaran habis. Kami sedang memeriksa status terakhir.",
+      "refresh": "Perbarui status",
+      "refreshing": "Memeriksa…",
+      "autoRefresh": "Status diperbarui otomatis setiap beberapa detik.",
+      "manualRefresh": "Pembaruan otomatis berhenti. Tekan Perbarui status untuk memeriksa lagi.",
+      "confirmedByUs": "Pembayaran dianggap berhasil hanya setelah dikonfirmasi oleh sistem kami, bukan saat tombol di aplikasi pembayaran ditekan."
+    },
+    "instructions": {
+      "openGateway": "Lanjutkan ke halaman pembayaran",
+      "openGatewayHint": "Halaman pembayaran terbuka di tab baru. Biarkan halaman ini terbuka untuk melihat status.",
+      "copy": "Salin",
+      "copied": "Tersalin",
+      "copyFailed": "Gagal menyalin",
+      "copyLabel": "Salin {field}"
+    },
+    "paid": {
+      "title": "Pembayaran berhasil",
+      "body": "Pesananmu sudah dibayar.",
+      "fulfillment": "Robux dikirim setelah pesanan diproses. Pantau status pengiriman di halaman pesanan.",
+      "paidAt": "Dibayar pada"
+    },
+    "closed": {
+      "failed": {
+        "title": "Pembayaran gagal",
+        "body": "Pembayaran belum berhasil diproses.",
+        "retry": "Coba pembayaran lagi"
+      },
+      "expired": {
+        "title": "Pembayaran kedaluwarsa",
+        "body": "Batas waktu pembayaran telah berakhir.",
+        "retry": "Buat pembayaran baru"
+      },
+      "cancelled": {
+        "title": "Pembayaran dibatalkan",
+        "body": "Pembayaran ini sudah dibatalkan.",
+        "retry": "Buat pembayaran baru"
+      },
+      "orderCancelled": {
+        "title": "Pesanan dibatalkan",
+        "body": "Pesanan ini sudah dibatalkan sehingga tidak dapat dibayar. Kamu bisa membuat pesanan baru kapan saja."
+      },
+      "refund": {
+        "title": "Pengembalian dana",
+        "body": "Pembayaran pesanan ini sedang atau sudah dikembalikan. Lihat detailnya di halaman pesanan."
+      },
+      "unavailable": {
+        "title": "Pembayaran belum tersedia",
+        "body": "Pembayaran untuk pesanan ini belum dapat dimulai. Coba lagi beberapa saat lagi atau lihat halaman pesanan."
+      }
+    },
+    "errors": {
+      "NOT_FOUND": "Pembayaran untuk pesanan ini belum dapat dibuka.",
+      "ORDER_NOT_PAYABLE": "Pesanan ini tidak dapat dibayar lagi. Periksa status pesanan atau buat pesanan baru.",
+      "PAYMENT_METHOD_UNAVAILABLE": "Metode pembayaran ini sedang tidak tersedia. Pilih metode lain.",
+      "PAYMENT_ALREADY_PENDING": "Pembayaran untuk pesanan ini sudah dibuat. Perbarui status untuk melanjutkannya.",
+      "PAYMENT_IN_PROGRESS": "Pembayaran sedang dibuat. Tunggu sebentar lalu perbarui status.",
+      "PAYMENT_GATEWAY_UNAVAILABLE": "Layanan pembayaran sedang tidak dapat dihubungi. Coba lagi beberapa saat lagi.",
+      "PAYMENT_GATEWAY_REJECTED": "Pembayaran belum dapat dibuat dengan metode ini. Coba metode lain atau ulangi nanti.",
+      "ORDER_NOT_FOUND": "Pesanan tidak ditemukan atau kamu tidak memiliki akses ke pesanan ini.",
+      "UNAUTHORIZED": "Sesi kamu berakhir. Masuk lagi untuk melihat pembayaran ini.",
+      "FORBIDDEN": "Kamu tidak memiliki akses ke pembayaran ini."
+    }
+  },
+  "common": {
+    "actions": {
+      "cancel": "Batal",
+      "back": "Kembali",
+      "review": "Lanjut",
+      "save": "Simpan",
+      "close": "Tutup"
+    },
+    "dialog": {
+      "close": "Tutup dialog"
+    },
+    "toast": {
+      "dismiss": "Tutup notifikasi"
+    },
+    "table": {
+      "number": "No.",
+      "actions": "Tindakan",
+      "summary": "{from}–{to} dari {total}"
+    },
+    "pagination": {
+      "label": "Navigasi halaman",
+      "show": "Tampilkan",
+      "page": "Halaman {page}",
+      "previous": "Sebelumnya",
+      "next": "Berikutnya"
+    }
+  },
+  "console": {
+    "brand": "Top Up Robux",
+    "brandSubtitle": "Konsol operasional",
+    "skipToContent": "Lewati ke konten",
+    "breadcrumb": "Jejak halaman",
+    "loading": "Memuat halaman…",
+    "navSections": {
+      "overview": "Ringkasan",
+      "commerce": "Penjualan",
+      "system": "Sistem"
+    },
+    "nav": {
+      "label": "Navigasi konsol",
+      "dashboard": "Dashboard",
+      "orders": "Pesanan",
+      "products": "Produk",
+      "pricing": "Harga",
+      "security": "Keamanan",
+      "inventory": "Inventori"
+    },
+    "topbar": {
+      "openMenu": "Buka menu navigasi"
+    },
+    "environment": {
+      "local": "Lokal",
+      "production": "Produksi"
+    },
+    "userMenu": {
+      "open": "Menu akun",
+      "security": "Keamanan akun"
+    },
+    "roles": {
+      "CUSTOMER": "Pelanggan",
+      "OPERATOR": "Operator",
+      "ADMIN": "Admin",
+      "SUPER_ADMIN": "Super Admin"
+    },
+    "notFound": {
+      "title": "Halaman tidak ditemukan",
+      "body": "Data yang dicari tidak ada atau tidak dapat dibuka dengan akun ini.",
+      "back": "Kembali ke dashboard"
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "greeting": "Selamat datang, {name}.",
+      "metricsTitle": "Ringkasan kinerja",
+      "metrics": {
+        "revenue": "Pendapatan",
+        "orders": "Pesanan",
+        "paidPayments": "Pembayaran berhasil",
+        "fulfillmentRate": "Tingkat pengiriman"
+      },
+      "metricUnavailable": "Belum tersedia",
+      "metricsNote": "Angka kinerja akan tampil setelah endpoint laporan tersedia. Tidak ada angka yang diperkirakan.",
+      "attentionTitle": "Perlu perhatian",
+      "unknown": "Belum tersedia",
+      "openItem": "Buka: {item}",
+      "attention": {
+        "twoFactor": "Verifikasi dua langkah belum aktif",
+        "twoFactorBody": "Aktifkan untuk melindungi akun ini jika kata sandinya bocor.",
+        "recommended": "Disarankan",
+        "unpriced": "Produk aktif tanpa harga berlaku",
+        "unpricedBody": "Pelanggan tidak dapat membeli produk ini sampai harganya diatur.",
+        "pendingPayments": "Pembayaran menunggu",
+        "reconciliation": "Kasus rekonsiliasi",
+        "failedFulfillment": "Pengiriman gagal",
+        "awaitingBackend": "Menunggu endpoint konsol untuk data ini.",
+        "futurePhase": "Pengiriman Robux dibangun pada fase berikutnya."
+      },
+      "catalogTitle": "Katalog",
+      "catalog": {
+        "active": "Aktif",
+        "inactive": "Nonaktif",
+        "total": "Total"
+      },
+      "catalogFailed": "Data katalog gagal dimuat.",
+      "viewAll": "Lihat semua",
+      "recentOrdersTitle": "Pesanan terbaru",
+      "noOrders": "Belum ada pesanan.",
+      "ordersUnavailableTitle": "Daftar pesanan belum tersedia",
+      "ordersUnavailableBody": "Server belum menyediakan daftar pesanan untuk konsol."
+    },
+    "security": {
+      "title": "Keamanan",
+      "subtitle": "Pengaturan keamanan akun staf kamu.",
+      "twoFactorTitle": "Verifikasi dua langkah",
+      "twoFactorDescription": "Kode dari aplikasi authenticator diminta setiap kali masuk.",
+      "statusOn": "Aktif",
+      "statusOff": "Tidak aktif",
+      "onBody": "Setiap kali masuk, kode 6 digit dari aplikasi authenticator diminta setelah kata sandi.",
+      "offBody": "Verifikasi dua langkah bersifat opsional, tetapi sangat disarankan untuk akun staf.",
+      "enable": "Aktifkan verifikasi dua langkah",
+      "enabledToast": "Verifikasi dua langkah aktif.",
+      "manageTitle": "Kelola verifikasi dua langkah",
+      "recoveryTitle": "Kode pemulihan",
+      "recoveryBody": "Kode pemulihan hanya ditampilkan satu kali saat aktivasi. Setiap kode dapat dipakai sekali.",
+      "regenerate": "Buat kode baru",
+      "disableTitle": "Nonaktifkan verifikasi dua langkah",
+      "disableBody": "Masuk hanya dengan kata sandi.",
+      "disable": "Nonaktifkan",
+      "unavailableNote": "Membuat kode pemulihan baru dan menonaktifkan verifikasi dua langkah belum didukung server."
+    },
+    "theme": {
+      "label": "Tema tampilan",
+      "light": "Terang",
+      "dark": "Gelap",
+      "system": "Ikuti sistem"
+    }
+  },
+  "adminInventory": {
+    "title": "Inventori",
+    "subtitle": "Sumber pengiriman Robux, saldo tersedia dan yang sedang dicadangkan untuk pesanan.",
+    "loadFailed": "Daftar sumber gagal dimuat. Muat ulang halaman untuk mencoba lagi.",
+    "empty": "Belum ada sumber.",
+    "emptyHint": "Tambahkan sumber untuk mulai mengirim pesanan.",
+    "newSource": "Sumber baru",
+    "createTitle": "Tambah sumber",
+    "createHint": "Sumber baru dibuat nonaktif. Aktifkan setelah data dan saldonya benar.",
+    "create": "Tambah sumber",
+    "created": "Sumber ditambahkan (nonaktif).",
+    "editTitle": "Edit sumber",
+    "edit": "Edit sumber",
+    "save": "Simpan perubahan",
+    "saved": "Perubahan tersimpan.",
+    "providerLocked": "Penyedia tidak dapat diubah setelah sumber dibuat.",
+    "activate": "Aktifkan",
+    "deactivate": "Nonaktifkan",
+    "activateConfirm": "Sumber akan ikut dipilih untuk pesanan baru jika kondisinya sehat.",
+    "deactivateConfirm": "Sumber tidak akan dipilih untuk pesanan baru. Pesanan yang sudah mencadangkan saldo di sumber ini tetap diselesaikan.",
+    "activated": "Sumber diaktifkan.",
+    "deactivated": "Sumber dinonaktifkan.",
+    "adjust": "Sesuaikan saldo",
+    "adjustTitle": "Sesuaikan saldo tersedia",
+    "adjustHint": "Gunakan angka positif untuk menambah dan negatif untuk mengurangi. Saldo yang dicadangkan tidak dapat dikurangi.",
+    "adjusted": "Saldo diperbarui.",
+    "actionsFor": "Tindakan untuk {name}",
+    "lowBalance": "Saldo rendah",
+    "lowBalanceSince": "Saldo rendah sejak {date}",
+    "normalBalance": "Normal",
+    "noCost": "Tidak diatur",
+    "columns": {
+      "source": "Sumber",
+      "provider": "Penyedia",
+      "available": "Tersedia",
+      "reserved": "Dicadangkan",
+      "status": "Status",
+      "health": "Kesehatan",
+      "priority": "Prioritas",
+      "lowBalance": "Saldo rendah",
+      "productLine": "Jenis"
+    },
+    "fields": {
+      "name": "Nama sumber",
+      "provider": "Kode penyedia",
+      "providerHint": "Kode adaptor penyedia di worker, misalnya mock.",
+      "priority": "Prioritas",
+      "priorityHint": "Angka lebih kecil didahulukan, hanya jika kandidat lain setara.",
+      "lowBalanceThreshold": "Batas saldo rendah (Robux)",
+      "costPerUnit": "Biaya per Robux (Rp)",
+      "costPerUnitHint": "Kosongkan jika tidak diketahui.",
+      "openingBalance": "Saldo awal (Robux)",
+      "delta": "Perubahan (Robux)",
+      "reason": "Alasan",
+      "productLine": "Jenis produk",
+      "productLineHint": "Satuan saldo sumber ini. Tidak dapat diubah setelah dibuat."
+    },
+    "status": {
+      "ACTIVE": "Aktif",
+      "DISABLED": "Nonaktif"
+    },
+    "health": {
+      "HEALTHY": "Sehat",
+      "DEGRADED": "Terganggu",
+      "UNAVAILABLE": "Tidak tersedia",
+      "UNKNOWN": "Belum diperiksa"
+    }
+  }
+}

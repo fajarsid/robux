@@ -1,0 +1,127 @@
+enum SourceStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("source_status")
+}
+
+enum SourceHealth {
+  HEALTHY
+  DEGRADED
+  UNAVAILABLE
+  UNKNOWN
+
+  @@map("source_health")
+}
+
+/// Balances are changed only by conditional atomic updates (DATABASE.md §8); CHECKs forbid negatives.
+model FulfillmentSource {
+  id                  String       @id @default(uuid(7)) @db.Uuid
+  provider            String
+  name                String       @unique
+  /// The product line whose units this source holds; routing only considers matching sources.
+  productLine         ProductLine  @default(ROBLOX_ROBUX) @map("product_line")
+  externalReference   String?      @map("external_reference")
+  /// Name of the secret holding provider credentials. Never the credential itself.
+  credentialRef       String?      @map("credential_ref")
+  priority            Int          @default(100)
+  status              SourceStatus @default(DISABLED)
+  health              SourceHealth @default(UNKNOWN)
+  availableBalance    BigInt       @default(0) @map("available_balance")
+  reservedBalance     BigInt       @default(0) @map("reserved_balance")
+  lowBalanceThreshold BigInt       @default(0) @map("low_balance_threshold")
+  currency            Currency
+  costPerUnit         Decimal?     @map("cost_per_unit") @db.Decimal(18, 4)
+  lastBalanceSyncAt   DateTime?    @map("last_balance_sync_at") @db.Timestamptz(3)
+  lastHealthCheckAt   DateTime?    @map("last_health_check_at") @db.Timestamptz(3)
+  /// Set when available_balance first drops below low_balance_threshold, cleared when it is back at
+  /// or above it. The transition (not the state) writes the SOURCE_LOW_BALANCE event, so one
+  /// crossing gives one alert.
+  lowBalanceSince     DateTime?    @map("low_balance_since") @db.Timestamptz(3)
+  /// Provider failures in a row (unavailable, timeout, rate limited); reset by any success.
+  consecutiveFailures Int          @default(0) @map("consecutive_failures")
+  metadata            Json         @default("{}")
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  allocations           FulfillmentAllocation[]
+  balanceLogs           SourceBalanceLog[]
+  digitalInventoryItems DigitalInventoryItem[]
+
+  @@unique([id, productLine])
+  @@index([status, health, priority])
+  @@index([productLine, status, health])
+  @@map("fulfillment_sources")
+}
+
+enum DigitalInventoryItemStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  DELIVERED
+  BLOCKED
+
+  @@map("digital_inventory_item_status")
+}
+
+/// Encrypted account payloads. Ciphertext is never part of an admin/list projection.
+model DigitalInventoryItem {
+  id               String                     @id @default(uuid(7)) @db.Uuid
+  productId        String                     @map("product_id") @db.Uuid
+  sourceId         String                     @map("source_id") @db.Uuid
+  productLine      ProductLine                @default(TELEGRAM_ACCOUNT) @map("product_line")
+  status           DigitalInventoryItemStatus @default(AVAILABLE)
+  encryptedPayload Bytes                      @map("encrypted_payload")
+  keyVersion       Int                        @map("key_version")
+  allocationId     String?                    @map("allocation_id") @db.Uuid
+  orderId          String?                    @map("order_id") @db.Uuid
+  metadata         Json                       @default("{}")
+  reservedAt       DateTime?                  @map("reserved_at") @db.Timestamptz(3)
+  soldAt           DateTime?                  @map("sold_at") @db.Timestamptz(3)
+  deliveredAt      DateTime?                  @map("delivered_at") @db.Timestamptz(3)
+  createdAt        DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product    Product                @relation(fields: [productId, productLine], references: [id, productLine], onDelete: Restrict)
+  source     FulfillmentSource      @relation(fields: [sourceId, productLine], references: [id, productLine], onDelete: Restrict)
+  allocation FulfillmentAllocation? @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+  order      Order?                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([productId, status, createdAt])
+  @@index([sourceId, status, createdAt])
+  @@index([allocationId, status])
+  @@index([orderId, status])
+  @@map("digital_inventory_items")
+}
+
+enum BalanceChangeReason {
+  RESERVE
+  CONSUME
+  RELEASE
+  SYNC
+  ADJUSTMENT
+
+  @@map("balance_change_reason")
+}
+
+/// Append-only ledger (trigger-enforced): every balance movement with the resulting balances.
+model SourceBalanceLog {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  sourceId       String              @map("source_id") @db.Uuid
+  allocationId   String?             @map("allocation_id") @db.Uuid
+  reason         BalanceChangeReason
+  deltaAvailable BigInt              @map("delta_available")
+  deltaReserved  BigInt              @map("delta_reserved")
+  availableAfter BigInt              @map("available_after")
+  reservedAfter  BigInt              @map("reserved_after")
+  note           String?
+  requestId      String?             @map("request_id")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  source     FulfillmentSource      @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  allocation FulfillmentAllocation? @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+
+  @@index([sourceId, createdAt])
+  @@index([allocationId])
+  @@map("source_balance_logs")
+}

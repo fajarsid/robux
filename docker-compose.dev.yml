@@ -1,0 +1,43 @@
+# Development override. Same images and topology as production, with:
+#   - plain HTTP Nginx on 127.0.0.1:${NGINX_DEV_PORT} (never on 0.0.0.0)
+#   - NODE_ENV=development, debug-friendly logging
+#   - no automatic restarts (failures stay visible)
+# PostgreSQL and Redis are NOT published; use `docker compose exec postgres psql ...`.
+# Own project name, so its volumes (robux-dev_pgdata, robux-dev_redisdata) are never the
+# production ones.
+
+name: robux-dev
+
+services:
+  migrate:
+    environment:
+      NODE_ENV: development
+
+  api:
+    environment:
+      NODE_ENV: development
+      PAYMENT_GATEWAY: mock
+    restart: 'no'
+
+  worker:
+    environment:
+      NODE_ENV: development
+      # Simulated delivery only (ADR-005): nothing reaches Roblox. Refused when NODE_ENV=production.
+      FULFILLMENT_PROVIDER: mock
+      MOCK_FULFILLMENT_SCENARIO: ${MOCK_FULFILLMENT_SCENARIO:-SUCCESS}
+    restart: 'no'
+
+  scheduler:
+    environment:
+      NODE_ENV: development
+    restart: 'no'
+
+  frontend:
+    restart: 'no'
+
+  nginx:
+    volumes:
+      - ./infra/nginx/dev:/etc/nginx/templates:ro
+    ports:
+      - '127.0.0.1:${NGINX_DEV_PORT:-8088}:8080'
+    restart: 'no'

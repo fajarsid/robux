@@ -1,0 +1,39 @@
+# Production: Cloudflare (Full strict) → Nginx. TLS with a Cloudflare Origin Certificate.
+# Container ports 8080/8443 (unprivileged image) are published as host 80/443.
+include /etc/nginx/snippets/http-common.conf;
+include /etc/nginx/snippets/cloudflare-real-ip.conf;
+
+map $host $forwarded_proto { default https; }
+
+server {
+  listen 8080 default_server;
+  server_name _;
+  location / { return 301 https://$host$request_uri; }
+}
+
+server {
+  listen 8443 ssl default_server;
+  http2 on;
+  server_name _;
+  ssl_reject_handshake on;
+}
+
+server {
+  listen 8443 ssl;
+  http2 on;
+  server_name ${APP_DOMAIN};
+  include /etc/nginx/snippets/tls.conf;
+  include /etc/nginx/snippets/security-headers.conf;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  include /etc/nginx/snippets/app-locations.conf;
+}
+
+server {
+  listen 8443 ssl;
+  http2 on;
+  server_name ${API_DOMAIN};
+  include /etc/nginx/snippets/tls.conf;
+  include /etc/nginx/snippets/security-headers.conf;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  include /etc/nginx/snippets/api-locations.conf;
+}

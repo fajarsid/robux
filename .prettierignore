@@ -1,0 +1,8 @@
+pnpm-lock.yaml
+dist
+.next
+coverage
+docs/PRD.md
+apps/api/src/generated
+docs/
+apps/web/next-env.d.ts

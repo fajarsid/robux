@@ -1,0 +1,50 @@
+model Product {
+  id                String            @id @default(uuid(7)) @db.Uuid
+  slug              String            @unique
+  name              String
+  /// Units delivered per package, in the product line's unit (Robux, Stars, months, accounts).
+  robuxAmount       Int               @map("robux_amount")
+  fulfillmentMethod FulfillmentMethod @map("fulfillment_method")
+  productLine       ProductLine       @default(ROBLOX_ROBUX) @map("product_line")
+  minQuantity       Int               @default(1) @map("min_quantity")
+  maxQuantity       Int               @default(10) @map("max_quantity")
+  isActive          Boolean           @default(false) @map("is_active")
+  /// Display order in the catalog (lower first).
+  displayOrder      Int               @default(0) @map("display_order")
+  metadata          Json              @default("{}")
+  /// Products referenced by orders cannot be deleted; archiving hides them from the catalog.
+  archivedAt        DateTime?         @map("archived_at") @db.Timestamptz(3)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  prices                ProductPrice[]
+  orderItems            OrderItem[]
+  digitalInventoryItems DigitalInventoryItem[]
+
+  @@unique([id, productLine])
+  @@index([isActive, displayOrder])
+  @@map("products")
+}
+
+/// Append-only price versions (trigger-enforced). Orders reference the exact version used.
+model ProductPrice {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  version       Int
+  sellingPrice  Decimal  @map("selling_price") @db.Decimal(18, 2)
+  costPrice     Decimal  @map("cost_price") @db.Decimal(18, 2)
+  currency      Currency
+  /// Optional provider-specific Telegram Stars quote. Never derived from IDR at checkout.
+  starsAmount   Int?     @map("stars_amount")
+  effectiveFrom DateTime @map("effective_from") @db.Timestamptz(3)
+  createdById   String?  @map("created_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdBy  User?       @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
+
+  @@unique([productId, version])
+  @@index([productId, effectiveFrom(sort: Desc)])
+  @@map("product_prices")
+}

@@ -1,0 +1,120 @@
+enum UserRole {
+  CUSTOMER
+  OPERATOR
+  ADMIN
+  SUPER_ADMIN
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@map("user_status")
+}
+
+model User {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  email           String     @unique
+  name            String?
+  role            UserRole   @default(CUSTOMER)
+  status          UserStatus @default(ACTIVE)
+  passwordHash    String?    @map("password_hash")
+  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions                UserSession[]
+  twoFactor               AdminTwoFactor?
+  recoveryCodes           AdminRecoveryCode[]
+  loginAttempts           LoginAttempt[]
+  orders                  Order[]
+  createdPrices           ProductPrice[]
+  orderStatusChanges      OrderStatusHistory[]
+  auditLogs               AuditLog[]
+  resolvedReconciliations ReconciliationCase[]
+  updatedSettings         SystemSetting[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.Char(64)
+  /// Rotated tokens share a family; reuse of a rotated token revokes the family.
+  familyId          String    @map("family_id") @db.Uuid
+  twoFactorVerified Boolean   @default(false) @map("two_factor_verified")
+  ipAddress         String?   @map("ip_address")
+  userAgent         String?   @map("user_agent")
+  idleExpiresAt     DateTime  @map("idle_expires_at") @db.Timestamptz(3)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt        DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model AdminTwoFactor {
+  userId           String    @id @map("user_id") @db.Uuid
+  /// AES-256-GCM ciphertext; the key lives outside the database (SECURITY.md §3).
+  secretCiphertext Bytes     @map("secret_ciphertext")
+  keyVersion       Int       @map("key_version")
+  enabledAt        DateTime? @map("enabled_at") @db.Timestamptz(3)
+  /// Last accepted TOTP time step; codes for this step or older are rejected (replay protection).
+  lastUsedStep     BigInt?   @map("last_used_step")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_2fa")
+}
+
+model AdminRecoveryCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@map("admin_recovery_codes")
+}
+
+enum LoginFailureReason {
+  INVALID_CREDENTIALS
+  ACCOUNT_SUSPENDED
+  ACCOUNT_LOCKED
+  INVALID_TWO_FACTOR
+  RATE_LIMITED
+
+  @@map("login_failure_reason")
+}
+
+model LoginAttempt {
+  id            String              @id @default(uuid(7)) @db.Uuid
+  /// SHA-256 of the normalised email, so attempts on unknown accounts can be throttled without storing them.
+  emailHash     String              @map("email_hash") @db.Char(64)
+  userId        String?             @map("user_id") @db.Uuid
+  ipAddress     String              @map("ip_address")
+  succeeded     Boolean
+  failureReason LoginFailureReason? @map("failure_reason")
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([emailHash, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("login_attempts")
+}
