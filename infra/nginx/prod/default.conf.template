@@ -1,4 +1,4 @@
-# Production: Cloudflare (Full strict) → Nginx. TLS with a Cloudflare Origin Certificate.
+# Production: HTTPS with a Let's Encrypt certificate managed by Certbot on the VPS.
 # Container ports 8080/8443 (unprivileged image) are published as host 80/443.
 include /etc/nginx/snippets/http-common.conf;
 include /etc/nginx/snippets/cloudflare-real-ip.conf;
@@ -8,6 +8,11 @@ map $host $forwarded_proto { default https; }
 server {
   listen 8080 default_server;
   server_name _;
+  location ^~ /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+    default_type text/plain;
+    try_files $uri =404;
+  }
   location / { return 301 https://$host$request_uri; }
 }
 

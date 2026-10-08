@@ -44,7 +44,7 @@ Repository state at the time of this decision: documentation only. No PM2 config
 
 ### 3. Nginx role
 
-Reverse proxy / edge gateway only: TLS termination (Cloudflare Origin Certificate), HTTP→HTTPS redirect, security headers, request body size limits, basic rate limiting (`limit_req`), WebSocket/SSE proxy support, access/error logs (JSON), real client IP from Cloudflare headers, and routing:
+Reverse proxy / edge gateway only: TLS termination using Certbot-managed Let's Encrypt certificates, HTTP→HTTPS redirect, security headers, request body size limits, basic rate limiting (`limit_req`), WebSocket/SSE proxy support, access/error logs (JSON), optional trusted Cloudflare client-IP headers, and routing:
 
 ```text
 app.<domain>  → frontend:3000

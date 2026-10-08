@@ -21,6 +21,5 @@ Files:
 | `account_inventory_encryption_key.txt` | api (AES-256-GCM key for digital account payloads at rest, 64 hex chars)          |
 | `duitku_merchant_code.txt`             | api (Duitku project code; from the Duitku dashboard, placeholder created empty)   |
 | `duitku_api_key.txt`                   | api (Duitku API key, signs requests and verifies callbacks; from the dashboard)   |
-| `origin_cert.pem`, `origin_key.pem`    | nginx (production TLS)                                                            |
 
-Production: create these files on the host (readable by the container users, see DEPLOYMENT.md §5), owned by root, never copied from a developer machine.
+Production: create these application-secret files on the host (readable by the container users, see DEPLOYMENT.md §5), owned by root, never copied from a developer machine. TLS certificates are managed separately by Certbot under `/etc/letsencrypt`; they are not stored here.

@@ -1,4 +1,4 @@
-# Production override (single VPS behind Cloudflare). Images are built by CI and pulled by tag:
+# Production override (single VPS). Nginx terminates TLS using host-managed Let's Encrypt certificates.
 #   IMAGE_TAG=<git-sha> docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # Only nginx publishes ports. Docker restarts every long-running service (no PM2).
 
@@ -66,16 +66,11 @@ services:
     <<: *prod
     volumes:
       - ./infra/nginx/prod:/etc/nginx/templates:ro
-    secrets:
-      - origin_cert
-      - origin_key
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ${LE_WEBROOT_PATH:-/var/www/letsencrypt}:/var/www/certbot:ro
+    group_add:
+      - ${LE_CERT_GID:-101}
     ports:
       - '80:8080'
       - '443:8443'
     mem_limit: 128m
-
-secrets:
-  origin_cert:
-    file: ${SECRETS_DIR:-./secrets}/origin_cert.pem
-  origin_key:
-    file: ${SECRETS_DIR:-./secrets}/origin_key.pem

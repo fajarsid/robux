@@ -1,6 +1,6 @@
 # Deployment
 
-**Status:** Phase 1 implemented and verified locally for both the development and production overrides (see IMPLEMENTATION_PLAN.md §11). Backups (§8), Authenticated Origin Pulls and real Cloudflare certificates are Phase 18.
+**Status:** Production Nginx terminates TLS with Certbot-managed Let's Encrypt certificates. Backups and Authenticated Origin Pulls remain separate future operations work.
 **Decision record:** ADR-002.
 
 > This project uses a Docker-first deployment architecture. Docker Compose manages application services and their lifecycle. Nginx acts as the reverse proxy/edge gateway. PM2 is intentionally not used because application process lifecycle is managed by Docker.
@@ -10,10 +10,10 @@
 ## 1. Production model
 
 ```text
-Cloudflare (DNS, proxy, WAF, TLS to origin: Full strict)
+Internet / optional Cloudflare proxy (Full strict when proxied)
      │
      ▼
-VPS (Linux, Docker Engine + Compose plugin only; no Node.js, no PM2 on the host)
+VPS (Linux, Docker Engine + Compose plugin and Certbot; no Node.js or PM2 on the host)
      │
      ▼
 Docker Compose project
@@ -33,12 +33,12 @@ No application process runs directly on the host. No hybrid host/container runti
 
 | Host            | Upstream         | Notes |
 |-----------------|------------------|-------|
-| `app.<domain>`  | `frontend:3000`  | Storefront, account, admin UI. |
-| `app.<domain>/api/*` | `api:4000` | Browser API calls, same origin as the page (ADR-008). `/healthz` (frontend container probe) denied. |
-| `api.<domain>`  | `api:4000`       | `/api/v1/**` including `/api/v1/webhooks/*`, plus `/health` and `/health/live`. `/health/ready` and `/metrics` denied at Nginx. |
+| `APP_DOMAIN`  | `frontend:3000`  | Storefront, account, admin UI. |
+| `APP_DOMAIN/api/*` | `api:4000` | Browser API calls and Telegram webhook, same origin as the Mini App (ADR-008). `/healthz` (frontend container probe) denied. |
+| `API_DOMAIN`  | `api:4000`       | Dedicated API hostname for provider callbacks and health checks. `/health/ready` and `/metrics` denied at Nginx. |
 | anything else   | 444 / redirect   | Default server drops unknown hosts. |
 
-Nginx responsibilities: TLS termination with a Cloudflare Origin Certificate, HTTP→HTTPS redirect, Authenticated Origin Pulls (mTLS from Cloudflare), real client IP from `CF-Connecting-IP` (trusted only from Cloudflare ranges), security headers, `client_max_body_size` (small; 1 MB default, webhooks sized to gateway needs), `limit_req` zones (stricter on `/api/v1/auth`, `/api/v1/orders`, `/api/v1/roblox/resolve`), SSE/WebSocket proxy settings (`proxy_buffering off`, upgrade headers) for the order monitor, `X-Request-Id` generation/forwarding, JSON access logs.
+Nginx responsibilities: TLS termination using the Certbot-managed Let's Encrypt SAN certificate, HTTP→HTTPS redirect (ACME HTTP-01 path excluded), real client IP from `CF-Connecting-IP` only when requests arrive from trusted Cloudflare ranges, security headers, request limits, SSE/WebSocket proxy settings, request IDs, and JSON access logs. Certbot stores certificates in `/etc/letsencrypt`; Nginx mounts that directory read-only and receives a dedicated supplementary group for read-only private-key access. No certificate or key is stored under the repository or Docker secrets.
 
 ## 3. Environment separation
 
@@ -62,7 +62,7 @@ Migration note (2026-10-05): the earlier shared volumes `robux_pgdata` and `robu
 | `data`   | yes      | api, worker, scheduler, migrate, postgres, redis |
 | `egress` | no       | api, worker, scheduler |
 
-Docker-published ports bypass host firewalls like UFW (Docker writes its own iptables rules). The real control for Postgres/Redis is "not published". The host firewall still restricts 80/443 to Cloudflare IP ranges and SSH to known addresses.
+Docker-published ports bypass host firewalls like UFW (Docker writes its own iptables rules). The real control for Postgres/Redis is "not published". Keep SSH restricted. If Cloudflare is enabled, allow its ranges to reach HTTPS; allow inbound TCP/80 for Let's Encrypt HTTP-01 validation and renewal (or use DNS-01 after configuring an authorized DNS plugin).
 
 ## 4. Service lifecycle
 
@@ -77,7 +77,7 @@ Docker-published ports bypass host firewalls like UFW (Docker writes its own ipt
 ## 5. Configuration and secrets
 
 - `.env.example` documents every variable. Real values are never committed.
-- Non-secret config: env file on the host (`/opt/robux/.env`, mode `0600`, owner root).
+- Non-secret config: env file on the host (`/var/www/robux/.env`, mode `0600`, owner root).
 - Payments (non-secret, Phase 6, docs/integrations/duitku.md): `PAYMENT_GATEWAY=none|duitku` (default `none`: payment intake off, no simulated gateway), `DUITKU_ENVIRONMENT=sandbox|production`, `DUITKU_CALLBACK_URL` (`https://api.<domain>/api/v1/webhooks/payments/duitku`), `DUITKU_RETURN_URL` (`https://app.<domain>/…`, the storefront return page), `DUITKU_PAYMENT_METHODS` (codes active in the Duitku project), optional `DUITKU_CALLBACK_ALLOWED_IPS` (Duitku's published callback IPs) and `DUITKU_REQUEST_TIMEOUT_MS` (default 15000). The API refuses to start with `duitku` and a missing key, method list or URL, and requires https URLs in production. The callback reaches the API through the `api.<domain>` host; Duitku requires port 80 or 443 and HTTP 200.
 - `TRUSTED_ORIGINS` (non-secret): the exact browser origin(s), e.g. `https://app.<domain>`. Used for CSRF origin checks and CORS; wildcards are refused at startup.
 - Secrets (DB password, Redis password, `csrf_secret`, `totp_encryption_key` (64 hex chars), `idempotency_encryption_key` (64 hex chars, api only, Phase 5), `duitku_merchant_code` and `duitku_api_key` (api only, Phase 6, values from the Duitku dashboard; `generate-secrets.sh` creates empty placeholders so Compose can mount them while payments are off), provider credentials, notification tokens): Compose `secrets:` mounted as files under `/run/secrets/*`, read by the config loader. Never in images, build args, or committed Compose files.
@@ -91,14 +91,17 @@ chmod 0750 ./deploy.sh
 sudo ./deploy.sh <immutable-release-tag>
 ```
 
-On first run it creates `.env` from `.env.example`, sets the app/API host defaults to
-`tele.fajarhub.tech` and `api.tele.fajarhub.tech`, generates missing application secrets,
-and creates a webhook secret. Review `.env`; supply the Telegram bot token and install a
-valid Cloudflare Origin Certificate/key for both hostnames under `secrets/` before retrying.
-The helper validates the production Compose configuration and required secret/certificate
-files, builds images on the VPS by default, applies migrations through the existing
+On first run it creates `.env` from `.env.example`, applies the previously requested
+`tele.fajarhub.tech` staging hostname only when bootstrapping a missing file, generates
+missing application secrets, and creates a webhook secret. For an existing `.env`, the
+script reads `APP_DOMAIN` and `API_DOMAIN` without changing them. Configure `CERTBOT_EMAIL`,
+DNS for each configured hostname, and the Telegram bot token in `.env`. The helper installs
+Certbot for the detected package manager, starts a temporary HTTP-only Nginx configuration,
+verifies the ACME webroot, obtains and validates the Let's Encrypt certificate, sets
+restrictive key permissions for Nginx, enables automatic renewal, and runs
+`certbot renew --dry-run`. It then restores the normal HTTPS Nginx configuration, builds images on the VPS by default, applies migrations through the existing
 `migrate` service, waits for service health, and checks API/frontend/Nginx internally.
-It does not change `.env`, pull source code, create secrets, or enable payment/fulfillment.
+It does not pull source code or enable payment/fulfillment.
 Set `DEPLOY_BUILD=false` only when the tagged images have already been published to the
 configured registry and the VPS is authenticated to pull them. Ensure `.env` uses the
 production hostnames and secrets before running it. The current production override keeps
@@ -120,13 +123,9 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml restart worker # 
 docker compose -f docker-compose.yml -f docker-compose.dev.yml down          # keep volumes
 ```
 
-Production stack locally (verification only; self-signed cert):
-
-```bash
-sh scripts/generate-dev-cert.sh       # secrets/origin_cert.pem, secrets/origin_key.pem
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait
-curl -k --resolve api.localhost:443:127.0.0.1 https://api.localhost/health/live
-```
+CI validates the TLS bootstrap configuration using the temporary HTTP-only ACME webroot
+server. It does not fabricate certificates or claim to test public HTTPS. Public HTTPS and
+renewal are verified by `deploy.sh` on the configured VPS after Let's Encrypt issuance.
 
 Production (on the VPS, images built by CI and pulled by tag):
 
