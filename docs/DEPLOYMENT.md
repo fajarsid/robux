@@ -84,6 +84,23 @@ Docker-published ports bypass host firewalls like UFW (Docker writes its own ipt
 
 ## 6. Commands (available from Phase 1)
 
+Production deployment helper (run from the checked-out release on the VPS):
+
+```bash
+chmod 0750 ./deploy.sh
+sudo ./deploy.sh <immutable-release-tag>
+```
+
+The helper validates the production Compose configuration and required secret/certificate
+files, builds images on the VPS by default, applies migrations through the existing
+`migrate` service, waits for service health, and checks API/frontend/Nginx internally.
+It does not change `.env`, pull source code, create secrets, or enable payment/fulfillment.
+Set `DEPLOY_BUILD=false` only when the tagged images have already been published to the
+configured registry and the VPS is authenticated to pull them. Ensure `.env` uses the
+production hostnames and secrets before running it. The current production override keeps
+`FULFILLMENT_PROVIDER=none`; do not accept live orders until an authorized fulfillment
+provider is configured.
+
 Development (Windows/macOS/Linux with Docker Desktop or Engine):
 
 ```bash
