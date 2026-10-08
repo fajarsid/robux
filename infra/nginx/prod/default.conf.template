@@ -1,44 +1,23 @@
-# Production: HTTPS with a Let's Encrypt certificate managed by Certbot on the VPS.
-# Container ports 8080/8443 (unprivileged image) are published as host 80/443.
+# Production internal edge. Public TLS and HTTP redirects are owned by host Nginx.
 include /etc/nginx/snippets/http-common.conf;
-include /etc/nginx/snippets/cloudflare-real-ip.conf;
-
-map $host $forwarded_proto { default https; }
+map $http_x_forwarded_proto $forwarded_proto { default https; }
 
 server {
   listen 8080 default_server;
   server_name _;
-  location ^~ /.well-known/acme-challenge/ {
-    root /var/www/certbot;
-    default_type text/plain;
-    try_files $uri =404;
-  }
-  location / { return 301 https://$host$request_uri; }
+  location / { return 444; }
 }
 
 server {
-  listen 8443 ssl default_server;
-  http2 on;
-  server_name _;
-  ssl_reject_handshake on;
-}
-
-server {
-  listen 8443 ssl;
-  http2 on;
+  listen 8080;
   server_name ${APP_DOMAIN};
-  include /etc/nginx/snippets/tls.conf;
   include /etc/nginx/snippets/security-headers.conf;
-  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
   include /etc/nginx/snippets/app-locations.conf;
 }
 
 server {
-  listen 8443 ssl;
-  http2 on;
+  listen 8080;
   server_name ${API_DOMAIN};
-  include /etc/nginx/snippets/tls.conf;
   include /etc/nginx/snippets/security-headers.conf;
-  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
   include /etc/nginx/snippets/api-locations.conf;
 }

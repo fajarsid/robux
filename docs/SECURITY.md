@@ -144,7 +144,7 @@ Source/provider credentials (platform-owned) are secrets: stored outside the dat
 
 | Control | Detail | Phase |
 |---------|--------|-------|
-| Network isolation | `app` and `data` networks `internal: true`; Postgres/Redis only on `data`, never published in any environment. Only `nginx` publishes ports (80/443). No PM2 or host-run app processes (ADR-002). Note: Docker-published ports bypass host firewalls such as UFW, so "not published" is the control, not the firewall. | 1 |
+| Network isolation | `app` and `data` networks `internal: true`; Postgres/Redis only on `data`, never published in any environment. On multi-project production hosts, host Nginx owns public 80/443 and Docker Nginx binds to loopback only. No PM2 or host-run app processes (ADR-002). Note: Docker-published ports bypass host firewalls such as UFW, so "not published" is the control, not the firewall. | 1 |
 | Origin protection | Host firewall: 80/443 from Cloudflare ranges only; SSH key-only, non-default user, fail2ban or equivalent. Cloudflare Full (strict) TLS with Origin Certificate; Authenticated Origin Pulls. | 18 |
 | Containers | Non-root users, read-only root filesystem where feasible, `no-new-privileges`, dropped capabilities, resource limits, no Docker socket mounts. | 1 / 16 |
 | Images | Multi-stage, prod deps only, pinned base, `trivy` scan in CI. | 1 / 16 |

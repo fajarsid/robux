@@ -1,7 +1,0 @@
-# Temporary HTTP-only Nginx config used only while Certbot obtains the initial certificate.
-name: robux-prod
-
-services:
-  nginx:
-    volumes:
-      - ./infra/nginx/prod/bootstrap:/etc/nginx/templates:ro

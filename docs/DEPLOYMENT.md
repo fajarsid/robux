@@ -1,6 +1,6 @@
 # Deployment
 
-**Status:** Production Nginx terminates TLS with Certbot-managed Let's Encrypt certificates. Backups and Authenticated Origin Pulls remain separate future operations work.
+**Status:** Existing host Nginx terminates TLS with host Certbot-managed Let's Encrypt certificates. Robux Docker Nginx binds only to loopback.
 **Decision record:** ADR-002.
 
 > This project uses a Docker-first deployment architecture. Docker Compose manages application services and their lifecycle. Nginx acts as the reverse proxy/edge gateway. PM2 is intentionally not used because application process lifecycle is managed by Docker.
@@ -9,25 +9,13 @@
 
 ## 1. Production model
 
-```text
-Internet / optional Cloudflare proxy (Full strict when proxied)
-     │
-     ▼
-VPS (Linux, Docker Engine + Compose plugin and Certbot; no Node.js or PM2 on the host)
-     │
-     ▼
-Docker Compose project
- ├── nginx       :80/:443 published   reverse proxy / edge gateway
- ├── frontend    :3000 internal       Next.js production server (standalone)
- ├── api         :4000 internal       NestJS HTTP API
- ├── worker      internal             BullMQ consumers (scalable)
- ├── scheduler   internal             repeatable-job registration
- ├── postgres    :5432 internal only  never published
- ├── redis       :6379 internal only  never published
- └── migrate     one-shot             prisma migrate deploy, runs before api/worker/scheduler
-```
+Internet / optional Cloudflare proxy
+  -> Existing host Nginx :80/:443 (shared VPS edge, host Certbot TLS)
+  -> 127.0.0.1:ROBUX_LOCAL_PORT
+  -> Docker Compose Robux edge (Nginx :8080 internal, frontend :3000, API :4000,
+     worker, scheduler, private PostgreSQL/Redis, one-shot migration)
 
-No application process runs directly on the host. No hybrid host/container runtime.
+The host Nginx remains the public edge for all existing VPS projects. Robux deployment adds only a marked vhost in the active sites-enabled or conf.d convention. It validates the full host config with nginx -t before a graceful systemctl reload nginx; it never stops, restarts, disables, or replaces host Nginx. Host Certbot stores certificates under /etc/letsencrypt; only host Nginx reads the private key. Docker Nginx is HTTP-only and bound to 127.0.0.1:ROBUX_LOCAL_PORT. PostgreSQL and Redis remain private.
 
 ## 2. Routing
 
@@ -38,7 +26,7 @@ No application process runs directly on the host. No hybrid host/container runti
 | `API_DOMAIN`  | `api:4000`       | Dedicated API hostname for provider callbacks and health checks. `/health/ready` and `/metrics` denied at Nginx. |
 | anything else   | 444 / redirect   | Default server drops unknown hosts. |
 
-Nginx responsibilities: TLS termination using the Certbot-managed Let's Encrypt SAN certificate, HTTP→HTTPS redirect (ACME HTTP-01 path excluded), real client IP from `CF-Connecting-IP` only when requests arrive from trusted Cloudflare ranges, security headers, request limits, SSE/WebSocket proxy settings, request IDs, and JSON access logs. Certbot stores certificates in `/etc/letsencrypt`; Nginx mounts that directory read-only and receives a dedicated supplementary group for read-only private-key access. No certificate or key is stored under the repository or Docker secrets.
+The Docker Nginx retains app/API routing, security headers, request limits, SSE/WebSocket proxy support, request IDs, and JSON access logs. Public TLS, HTTP-to-HTTPS redirect, and ACME HTTP-01 handling belong to host Nginx. No TLS key is stored in the repository or mounted into Docker.
 
 ## 3. Environment separation
 
@@ -82,81 +70,16 @@ Docker-published ports bypass host firewalls like UFW (Docker writes its own ipt
 - `TRUSTED_ORIGINS` (non-secret): the exact browser origin(s), e.g. `https://app.<domain>`. Used for CSRF origin checks and CORS; wildcards are refused at startup.
 - Secrets (DB password, Redis password, `csrf_secret`, `totp_encryption_key` (64 hex chars), `idempotency_encryption_key` (64 hex chars, api only, Phase 5), `duitku_merchant_code` and `duitku_api_key` (api only, Phase 6, values from the Duitku dashboard; `generate-secrets.sh` creates empty placeholders so Compose can mount them while payments are off), provider credentials, notification tokens): Compose `secrets:` mounted as files under `/run/secrets/*`, read by the config loader. Never in images, build args, or committed Compose files.
 
-## 6. Commands (available from Phase 1)
+## 6. Commands
 
-Production deployment helper (run from the checked-out release on the VPS):
+Run the production helper on the VPS:
 
-```bash
 chmod 0750 ./deploy.sh
 sudo ./deploy.sh <immutable-release-tag>
-```
 
-On first run it creates `.env` from `.env.example`, applies the previously requested
-`tele.fajarhub.tech` staging hostname only when bootstrapping a missing file, generates
-missing application secrets, and creates a webhook secret. For an existing `.env`, the
-script reads `APP_DOMAIN` and `API_DOMAIN` without changing them. Configure `CERTBOT_EMAIL`,
-DNS for each configured hostname, and the Telegram bot token in `.env`. The helper installs
-Certbot for the detected package manager, starts a temporary HTTP-only Nginx configuration,
-verifies the ACME webroot, obtains and validates the Let's Encrypt certificate, sets
-restrictive key permissions for Nginx, enables automatic renewal, and runs
-`certbot renew --dry-run`. It then restores the normal HTTPS Nginx configuration, builds images on the VPS by default, applies migrations through the existing
-`migrate` service, waits for service health, and checks API/frontend/Nginx internally.
-It does not pull source code or enable payment/fulfillment.
-Set `DEPLOY_BUILD=false` only when the tagged images have already been published to the
-configured registry and the VPS is authenticated to pull them. Ensure `.env` uses the
-production hostnames and secrets before running it. The current production override keeps
-`FULFILLMENT_PROVIDER=none`; do not accept live orders until an authorized fulfillment
-provider is configured.
+The script requires an existing .env with the intended public APP_DOMAIN, API_DOMAIN, and CERTBOT_EMAIL; it stops with DOMAIN_REQUIRED rather than inventing a hostname. Configure DNS for each name and use the VPS's existing host Nginx and Certbot. The helper snapshots nginx -T, verifies host Nginx owns ports 80/443, selects a free loopback-only Robux port, starts the application, detects the established vhost include convention, and adds or updates only its marked Robux file. It verifies HTTP-01 routing, obtains a certificate with host Certbot when needed, tests nginx -t, and gracefully reloads host Nginx. It then verifies the existing renewal timer/dry-run, existing domains, Robux HTTPS/redirect/API/Mini App, and Telegram webhook. It never installs a second Nginx/Certbot stack, binds Docker to public ports, or enables payment/fulfillment. It does not pull source code.
 
-Development (Windows/macOS/Linux with Docker Desktop or Engine):
-
-```bash
-cp .env.example .env                  # non-secret config
-sh scripts/generate-secrets.sh        # secrets/postgres_password.txt, secrets/redis_password.txt
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --wait
-docker compose -f docker-compose.yml -f docker-compose.dev.yml ps -a        # all healthy, migrate exited 0
-curl -H "Host: app.localhost" http://127.0.0.1:8088/                         # Next.js via Nginx
-curl -H "Host: api.localhost" http://127.0.0.1:8088/health/live              # NestJS via Nginx
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f api worker
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api node dist/seed/run-seed.js  # dev data, idempotent
-docker compose -f docker-compose.yml -f docker-compose.dev.yml restart worker # API unaffected
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down          # keep volumes
-```
-
-CI validates the TLS bootstrap configuration using the temporary HTTP-only ACME webroot
-server. It does not fabricate certificates or claim to test public HTTPS. Public HTTPS and
-renewal are verified by `deploy.sh` on the configured VPS after Let's Encrypt issuance.
-
-Production (on the VPS, images built by CI and pulled by tag):
-
-```bash
-export IMAGE_TAG=<git-sha>
-docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d        # migrate runs first automatically
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps           # all healthy, migrate exited 0
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale worker=3
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart worker   # API unaffected
-```
-
-First staff account in a new environment (no default credentials exist; the password is printed once):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api \
-  node dist/cli/create-staff-account.js --email <address> --role SUPER_ADMIN
-```
-
-The production API refuses to start if development accounts (`@dev.robux.test`) exist or any staff account uses the development password. Never run the development seed against a production database (it refuses `NODE_ENV=production` as well).
-
-Rollback: set `IMAGE_TAG` to the previous tag and run `up -d`. Migrations are written expand/contract style so the previous image keeps working against the newer schema; destructive migrations are split across two releases.
-
-Verification after deploy:
-
-```bash
-docker compose ... exec api node -e "fetch('http://localhost:4000/health/ready').then(r=>process.exit(r.ok?0:1))"
-ss -tlnp                                  # only :80, :443 (and SSH) listening on public interfaces
-curl -s  https://api.<domain>/health/live     # {"status":"ok"}
-curl -sI https://api.<domain>/health/ready    # 404 from Nginx (internal only)
-```
+Set DEPLOY_BUILD=false only when tagged images are published to the configured registry. The production override keeps FULFILLMENT_PROVIDER=none and payment intake disabled. Development and production operational/rollback commands continue below.
 
 ## 7. CI/CD
 

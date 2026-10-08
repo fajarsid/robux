@@ -31,7 +31,7 @@ Repository state at the time of this decision: documentation only. No PM2 config
 
 | Service     | Image / command                       | Port (container) | Lifecycle |
 |-------------|---------------------------------------|------------------|-----------|
-| `nginx`     | nginxinc/nginx-unprivileged (1.28)     | 8080/8443 → host 80/443 | `unless-stopped` |
+| `nginx`     | nginxinc/nginx-unprivileged (1.28)     | 8080 → 127.0.0.1:`ROBUX_LOCAL_PORT` | `unless-stopped` |
 | `frontend`  | `app-web`, `node server.js` (Next.js standalone) | 3000 | `unless-stopped` |
 | `api`       | `app-api`, `node dist/main.js`         | 4000 | `unless-stopped` |
 | `worker`    | `app-api`, `node dist/worker.js`       | 4001 (health, container-local) | `unless-stopped`, scalable |
@@ -44,7 +44,7 @@ Repository state at the time of this decision: documentation only. No PM2 config
 
 ### 3. Nginx role
 
-Reverse proxy / edge gateway only: TLS termination using Certbot-managed Let's Encrypt certificates, HTTP→HTTPS redirect, security headers, request body size limits, basic rate limiting (`limit_req`), WebSocket/SSE proxy support, access/error logs (JSON), optional trusted Cloudflare client-IP headers, and routing:
+Reverse proxy / internal edge only. On a multi-project VPS the existing host Nginx owns public 80/443, terminates TLS with host Certbot-managed Let's Encrypt certificates, redirects HTTP to HTTPS, and proxies this project to `127.0.0.1:ROBUX_LOCAL_PORT`. The container retains app/API routing, security headers, request body limits, rate limits, WebSocket/SSE support and JSON access logs:
 
 ```text
 app.<domain>  → frontend:3000
@@ -57,7 +57,7 @@ Nginx never proxies to PostgreSQL or Redis and is not a process manager.
 
 | Network  | `internal` | Members                                            | Purpose |
 |----------|-----------|----------------------------------------------------|---------|
-| `edge`   | no        | nginx                                              | Only network with published host ports (80/443). |
+| `edge`   | no        | nginx                                              | Only container with a host binding; production binding is loopback-only. |
 | `app`    | yes       | nginx, frontend, api                               | Nginx → frontend/api; frontend SSR → `http://api:4000`. |
 | `data`   | yes       | api, worker, scheduler, migrate, postgres, redis   | Database and queue access. No route to the internet. |
 | `egress` | no        | api, worker, scheduler                             | Outbound HTTPS to payment gateway, Roblox, fulfillment providers, Telegram/Discord/email. No published ports. |

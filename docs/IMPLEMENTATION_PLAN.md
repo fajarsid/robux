@@ -133,7 +133,7 @@ Defined in ADR-002, ARCHITECTURE.md §3 and DEPLOYMENT.md. Summary:
 
 - Docker Compose manages every application process (`frontend`, `api`, `worker`, `scheduler`) plus `nginx`, `postgres`, `redis` and a one-shot `migrate`. `restart: unless-stopped` in production. **No PM2**, no host-run Node processes, no hybrid.
 - Nginx is reverse proxy / edge gateway only: `app.<domain>` → `frontend:3000`, `api.<domain>` → `api:4000`.
-- Networks: `edge` (nginx, published 80/443), `app` (internal: nginx, frontend, api), `data` (internal: api, worker, scheduler, migrate, postgres, redis), `egress` (api, worker, scheduler). Postgres/Redis never published in production.
+- Networks: `edge` (Docker Nginx bound to localhost in production), `app` (internal: nginx, frontend, api), `data` (internal: api, worker, scheduler, migrate, postgres, redis), `egress` (api, worker, scheduler). Host Nginx owns public 80/443; Postgres/Redis are never published in production.
 - API never executes fulfillment; `worker` containers consume BullMQ jobs and are independently restartable/scalable; `scheduler` container owns repeatable jobs (no PM2 cron).
 - Multi-stage, non-root, deterministic (`--frozen-lockfile`) images; Next.js standalone output; graceful shutdown with `tini`; health checks on every service; secrets injected at runtime.
 
@@ -207,7 +207,7 @@ Verified on Docker Desktop 29.6.1 / Compose v5.3.0 (Windows 11). Awaiting owner 
 | PostgreSQL / Redis connectivity | Pass: authenticated readiness 200 from api, worker, scheduler; Redis rejects unauthenticated commands (`NOAUTH`), `FLUSHALL` disabled, AOF on, `noeviction` |
 | PostgreSQL / Redis isolation | Pass: unreachable from `frontend` and `nginx` (ENETUNREACH); no published ports |
 | Egress | Pass: only api, worker, scheduler reach the internet |
-| Public ports | Pass: Docker publishes only 80 and 443 (nginx) |
+| Public ports | Pass: existing host Nginx owns public 80/443; production Docker Nginx binds only to loopback |
 | Worker isolation | Pass: `restart worker` leaves api, frontend, postgres, redis, nginx, scheduler untouched; API and web returned 200 throughout |
 | Crash recovery | Pass: SIGKILL of the worker process → Docker restarted it in ~8 s (`RestartCount` 1), healthy again |
 | Readiness reflects dependencies | Pass (dev run): Redis or PostgreSQL stopped → 503; recovers to 200 |
@@ -276,7 +276,7 @@ Awaiting owner review; not committed. No schema change was needed: the Phase 2 i
 | No Roblox credentials | Pass: strict schemas reject extra credential fields; nothing stores or logs Roblox data; UI warns users never to enter a Roblox password |
 | Phase 2 tests | Pass: 45 database tests unchanged |
 | New tests | Pass: 49 unit tests (was 16; TOTP, permissions, cipher, stages, IP masking, config), 87 integration tests in 12 suites (42 new HTTP tests against the full app on PostgreSQL + Redis) |
-| Docker production regression | Pass on a fresh isolated volume: all services healthy, migrations applied, staff created with the CLI, full password + TOTP enrollment over HTTPS through Nginx, SSR admin page, isolation of PostgreSQL/Redis, only 80/443 published, worker restart leaves others untouched, no errors in logs, no secrets in container env. Against the dev-seeded volume the production API refuses to start (intended) |
+| Docker production regression | Pass on a fresh isolated volume: all services healthy, migrations applied, staff created with the CLI, full password + TOTP enrollment over HTTPS through host Nginx, SSR admin page, isolation of PostgreSQL/Redis, only host Nginx owns public 80/443 and Robux Docker Nginx is loopback-only, worker restart leaves others untouched, no errors in logs, no secrets in container env. Against the dev-seeded volume the production API refuses to start (intended) |
 | Gitleaks | Pass on committable files (three test-fixture literals it flagged were replaced with values generated per test run) |
 | Documentation | Pass: ADR-008, SECURITY sections 3, 4 and 7, ARCHITECTURE, DEPLOYMENT, ENGINEERING_STANDARDS, CLAUDE.md, .env.example, secrets/README |
 | No PM2, no commit, no push | Pass |
@@ -537,4 +537,3 @@ Phase 11 was redefined. The authorized-provider integration (§24) stays blocked
   - Admin product and source dialogs and tables show and set the line; order detail shows the line, type and recipient (or "none").
   - Seed adds inactive Telegram Premium, Stars and account products.
 - **Not built (Phase 12+):** Telegram supplier integrations, the Telegram checkout UI, account item storage and delivery to the customer, the inventory UI for accounts, and any real provider (D-01).
-
