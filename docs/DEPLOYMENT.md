@@ -91,6 +91,10 @@ chmod 0750 ./deploy.sh
 sudo ./deploy.sh <immutable-release-tag>
 ```
 
+On first run it creates `.env` from `.env.example`, sets the app/API host defaults to
+`tele.fajarhub.tech` and `api.tele.fajarhub.tech`, generates missing application secrets,
+and creates a webhook secret. Review `.env`; supply the Telegram bot token and install a
+valid Cloudflare Origin Certificate/key for both hostnames under `secrets/` before retrying.
 The helper validates the production Compose configuration and required secret/certificate
 files, builds images on the VPS by default, applies migrations through the existing
 `migrate` service, waits for service health, and checks API/frontend/Nginx internally.
