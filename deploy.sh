@@ -26,9 +26,9 @@ printf 'Private audit snapshots: %s\n' "$SNAPSHOT_DIR"
 DOMAIN="$(getv DOMAIN)"
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ && "$DOMAIN" != *localhost* ]] || die 'DOMAIN_REQUIRED: set DOMAIN in /etc/robux/production.env.'
 [[ "$(getv API_HOST)" == 127.0.0.1 && "$(getv HOSTNAME)" == 127.0.0.1 ]] || die 'API and Web must bind only to 127.0.0.1.'
-getent ahostsv4 "$DOMAIN" >/dev/null || die "DNS for $DOMAIN does not resolve."
+getent ahostsv4 "$DOMAIN" >/dev/null || die "PREREQUISITE_NOT_MET: Robux DNS for $DOMAIN does not resolve."
 API_ALIAS="$(getv API_DOMAIN_ALIAS)"
-if [[ -n "$API_ALIAS" ]]; then getent ahostsv4 "$API_ALIAS" >/dev/null || die "DNS for API_DOMAIN_ALIAS $API_ALIAS does not resolve."; fi
+if [[ -n "$API_ALIAS" ]]; then getent ahostsv4 "$API_ALIAS" >/dev/null || die "PREREQUISITE_NOT_MET: Robux API alias DNS for $API_ALIAS does not resolve."; fi
 for key in API_PORT WEB_PORT POSTGRES_HOST_PORT REDIS_HOST_PORT WORKER_HEALTH_PORT SCHEDULER_HEALTH_PORT; do
   value="$(getv "$key")"; [[ "$value" =~ ^[0-9]{2,5}$ ]] && ((value > 1024 && value < 65536)) || die "Invalid $key in production environment."
 done
@@ -40,7 +40,7 @@ VHOST=/etc/nginx/sites-available/robux.conf; [[ -f "$VHOST" ]] || VHOST=/etc/ngi
 grep -Fq "server 127.0.0.1:$(getv API_PORT);" "$VHOST" || die 'Nginx API upstream does not match configured API_PORT.'
 grep -Fq "server 127.0.0.1:$(getv WEB_PORT);" "$VHOST" || die 'Nginx Web upstream does not match configured WEB_PORT.'
 grep -E "server_name[^;]*$DOMAIN" "$VHOST" >/dev/null || die 'Robux Nginx vhost does not include configured DOMAIN.'
-[[ -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" && -s "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die "TLS certificate missing. After DNS and HTTP routing are ready, run: sudo certbot --nginx -d $DOMAIN"
+[[ -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" && -s "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]] || die "PREREQUISITE_NOT_MET: Robux TLS certificate missing. After DNS and HTTP routing are ready, run: sudo certbot --nginx -d $DOMAIN"
 openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkend 0 >/dev/null || die 'TLS certificate expired.'
 openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkhost "$DOMAIN" >/dev/null || die 'Let’s Encrypt certificate does not cover DOMAIN.'
 if [[ -n "$API_ALIAS" ]]; then openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -checkhost "$API_ALIAS" >/dev/null || die 'Let’s Encrypt certificate does not cover API_DOMAIN_ALIAS.'; fi
@@ -112,8 +112,14 @@ for key in WORKER_HEALTH_PORT SCHEDULER_HEALTH_PORT; do
   wait_http "http://127.0.0.1:$(getv "$key")/health/ready" || die "$key readiness failed."
 done
 
+for unit in robux-api robux-web robux-worker robux-scheduler; do
+  systemctl is-active --quiet "$unit.service" || die "$unit.service is not active."
+  printf 'Robux service %s: ACTIVE; HTTP health check passed.\n' "$unit"
+done
+printf 'Robux PostgreSQL/Redis: Compose startup health checks passed; process readiness passed.\n'
 nginx -t || die 'nginx -t failed; host Nginx was NOT reloaded.'
-systemctl reload nginx
+# deploy.sh does not write Nginx configuration; setup-vps.sh reloads only its changes.
+printf 'Robux Nginx configuration not modified by deploy; reload skipped.\n'
 nginx -T >"$SNAPSHOT_DIR/nginx-after-robux-deploy.txt" 2>&1 || die 'Post-deploy nginx -T failed.'
 # No existing server_name may disappear during this deployment.
 grep -E '^[[:space:]]*server_name[[:space:]]' "$SNAPSHOT_DIR/nginx-before-robux-deploy.txt" | sed -E 's/^[[:space:]]*server_name[[:space:]]+//;s/;.*$//' | tr ' ' '\n' | sed '/^$/d' | sort -u >"$SNAPSHOT_DIR/robux-server-names-before.txt"
@@ -121,13 +127,6 @@ grep -E '^[[:space:]]*server_name[[:space:]]' "$SNAPSHOT_DIR/nginx-after-robux-d
 if comm -23 "$SNAPSHOT_DIR/robux-server-names-before.txt" "$SNAPSHOT_DIR/robux-server-names-after.txt" | grep -q .; then
   die 'Existing Nginx server_name entries changed or disappeared.'
 fi
-for host in smartpad.web.id quranest.web.id ride.fajarhub.tech mbgcore.id ceotopup.com layartopup.com; do
-  if grep -Fq "$host" "$SNAPSHOT_DIR/nginx-before-robux-deploy.txt"; then
-    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$host/" || true)"
-    [[ "$code" =~ ^[23][0-9][0-9]$ ]] || die "Existing project $host did not pass its HTTPS smoke test (HTTP ${code:-no response}). Stop and investigate."
-    printf 'Existing project %s: HTTP %s\n' "$host" "$code"
-  fi
-done
 http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "http://$DOMAIN/")"
 [[ "$http_code" == 301 || "$http_code" == 308 ]] || die "HTTP to HTTPS redirect failed (HTTP $http_code)."
 web_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$DOMAIN/telegram-store")"

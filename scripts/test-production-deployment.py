@@ -18,6 +18,54 @@ class DeploymentTests(unittest.TestCase):
             result = subprocess.run([BASH, "-n", name], cwd=ROOT, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_no_external_project_http_dependency(self):
+        for name in ("deploy.sh", "setup-vps.sh"):
+            source = (ROOT / name).read_text()
+            for forbidden in ("nginx-project-smoke", "capture_project_baseline",
+                              "verify_project_baseline", "mbgcore.id", "smartpad.web.id",
+                              "quranest.web.id", "ride.fajarhub.tech", "ceotopup.com", "layartopup.com"):
+                self.assertNotIn(forbidden, source)
+        self.assertNotIn("systemctl reload nginx", (ROOT / "deploy.sh").read_text())
+
+    def test_nginx_reload_only_for_valid_robux_changes(self):
+        source = (ROOT / "setup-vps.sh").read_text()
+        block = source[source.index("if ! nginx -t; then"):source.index('nginx -T >"$SNAPSHOT_DIR/nginx-after')]
+        for changed, linked, valid, expected_reload in ((0, 0, True, False), (1, 0, True, True),
+                                                        (0, 1, True, True), (1, 0, False, False)):
+            with self.subTest(changed=changed, linked=linked, valid=valid):
+                harness = f'''set -Eeuo pipefail
+VHOST_CHANGED={changed}
+CREATED_LINK={linked}
+VHOST_BACKUP=''
+VHOST=/unused/robux.conf
+LINK=/unused/link
+nginx(){{ {'true' if valid else 'false'}; }}
+systemctl(){{ echo "CALLED:$*"; }}
+rm(){{ :; }}
+die(){{ echo "$*" >&2; exit 1; }}
+{block}
+'''
+                result = subprocess.run([BASH], input=harness, cwd=ROOT, capture_output=True, text=True)
+                self.assertEqual("CALLED:reload nginx" in result.stdout, expected_reload, result.stderr)
+                self.assertEqual(result.returncode == 0, valid, result.stderr)
+
+    def test_legacy_env_quotes_without_awk_warnings(self):
+        source = (ROOT / "setup-vps.sh").read_text()
+        function = next(line for line in source.splitlines() if line.startswith("oldv(){"))
+        function = function.replace('"$ROOT_DIR/.env"', '"$TEST_ENV"')
+        harness = f'''set -Eeuo pipefail
+export PATH=/usr/bin:/bin:$PATH
+TEST_ENV="$(mktemp)"
+trap 'rm -f "$TEST_ENV"' EXIT
+{function}
+printf '%s\\n' 'APP_DOMAIN="tele.fajarhub.tech"' >"$TEST_ENV"
+oldv APP_DOMAIN
+'''
+        result = subprocess.run([BASH], input=harness, cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "tele.fajarhub.tech")
+        self.assertEqual(result.stderr, "")
+
     def run_port_selection(self, old, occupied=(), active=False, owner=123):
         source = (ROOT / "setup-vps.sh").read_text()
         function = source[source.index("choose(){"):source.index("printf 'Inspecting current listeners")]

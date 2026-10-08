@@ -25,7 +25,7 @@ local Windows repository access, not an SSH connection to the shared VPS.
 | Typecheck | PASS |
 | Lint | PASS |
 | Workspace build | PASS |
-| Offline deployment tests | 8 passed |
+| Offline deployment tests | 11 passed |
 | Bash syntax, both scripts | PASS |
 | Production Compose configuration | PASS |
 | git diff --check | PASS |
@@ -72,7 +72,7 @@ sudo bash ./deploy.sh
 Confirm the server domain (previously requested: `tele.fajarhub.tech`) in server configuration.
 Ports are selected on the VPS; local candidate values are not proof of availability.
 Verify `/telegram-store`, the API webhook, all services, renewal with
-`certbot renew --dry-run`, existing projects, and the real Telegram `/start` flow before
+`certbot renew --dry-run` and the real Telegram `/start` flow before
 declaring deployment successful.
 
 ## Limitations
@@ -86,3 +86,10 @@ declaring deployment successful.
 - Migration-history snapshots are not database backups. Database rollback requires a separate
   verified recovery plan.
 - Production rejects mock payment/fulfillment; this security gate remains unchanged.
+
+## Robux-only validation correction
+
+Removed the unrelated-domain HTTP smoke helper and its setup/deploy calls. Shared Nginx
+syntax, server-name preservation, and port ownership audits remain. Setup reloads only its
+changed valid vhost; deploy does not reload unchanged Nginx. Offline tests cover these gates
+and the corrected AWK parser. Production setup was not rerun for this correction.

@@ -23,7 +23,9 @@ sudo ./setup-vps.sh
 sudoedit /etc/robux/production.env
 ```
 
-Set `DOMAIN` to the confirmed public domain in `/etc/robux/production.env`, and configure
+The default domain is `tele.fajarhub.tech`; setup also fills a previously empty `DOMAIN`
+without overwriting an existing configured domain. No manual domain edit is needed for this
+store. Configure
 Telegram and any approved payment credentials in files under `/etc/robux/secrets/`. The
 setup script creates a dedicated `robux` system user, chooses ports only after checking
 `ss -ltnp` and current Docker port mappings, creates the four systemd units, and adds a
@@ -84,7 +86,7 @@ systemd services. It stops only this Compose project's legacy application contai
 (`api`, `worker`, `scheduler`, `frontend`, `nginx`) after the build and migration pass; it
 never removes containers' persistent volumes. Health checks cover the local API and
 `/telegram-store`, HTTPS and redirect behavior, and the API/web paths through host Nginx.
-The script checks API, worker and scheduler readiness, then snapshots Nginx server names before/after its graceful reload and refuses to
+The script checks API, worker and scheduler readiness, then snapshots Nginx server names before/after deployment and refuses to
 continue if existing names disappear. It registers/verifies the Telegram webhook only when
 both token and webhook-secret files are configured; tokens are not printed.
 
@@ -124,9 +126,20 @@ stored next to the Robux vhost; no other virtual host is modified.
 This repository-side change has not been run on the VPS. Before calling deployment complete,
 verify `nginx -T`, `nginx -t`, all four systemd units, Docker health for PostgreSQL/Redis,
 `ss -ltnp`, `http://<DOMAIN>` redirect, `https://<DOMAIN>/telegram-store`,
-`https://<DOMAIN>/api/v1/telegram/webhook`, and several existing VPS domains. Then open the
+`https://<DOMAIN>/api/v1/telegram/webhook`. Then open the
 bot in Telegram and verify `/start` → Mini App. Do not report these runtime checks as passed
 until they have been executed on that host.
+
+Setup and deploy do not make HTTP requests to unrelated project domains. A 404 or outage
+on another project is not a Robux deployment blocker. The read-only Nginx configuration
+snapshots, server-name preservation audit, duplicate-host checks and port conflict checks
+remain in place to protect the shared VPS.
+
+Setup always runs `nginx -t`, and reloads only when its Robux vhost/link changed and validation
+passed. Deploy does not write Nginx configuration and therefore never reloads it. Neither
+script stops or restarts host Nginx. Missing Robux DNS/TLS is reported as an unmet prerequisite.
+Setup reports runtime health as NOT VERIFIED; deploy checks only the four Robux services,
+their readiness endpoints, Robux PostgreSQL/Redis and the configured Robux public URLs.
 
 ## Migration precautions
 

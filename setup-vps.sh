@@ -27,7 +27,7 @@ chmod 0600 "$ENV_FILE"; chown root:robux "$ENV_FILE"
 cp -a "$ENV_FILE" "$ENV_FILE.backup.$(date -u +%Y%m%dT%H%M%SZ)"
 getv(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); value=$0} END{print value}' "$ENV_FILE"; }
 setv(){ local k=$1 v=$2 t; [[ "$v" != *$'\n'* && "$v" != *$'\r'* ]] || die "Invalid value for $k"; t="$(mktemp "$CONF/env.XXXXXX")"; awk -F= -v k="$k" '$1!=k{print}' "$ENV_FILE" >"$t"; printf '%s=%s\n' "$k" "$v" >>"$t"; chmod 0600 "$t"; chown root:robux "$t"; mv "$t" "$ENV_FILE"; }
-oldv(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); gsub(/^[\047\"]|[\047\"]$/, "", $0); value=$0} END{print value}' "$ROOT_DIR/.env"; }
+oldv(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); gsub(/^[\047"]|[\047"]$/, "", $0); value=$0} END{print value}' "$ROOT_DIR/.env"; }
 OLD_DOMAIN=''; LEGACY_SECRET_DIR=''
 if [[ -f "$ROOT_DIR/.env" ]]; then
   candidate="$(oldv APP_DOMAIN)"
@@ -45,6 +45,11 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
     alias="$(oldv API_DOMAIN)"
     if [[ "$(getv DOMAIN)" == "$OLD_DOMAIN" && -z "$(getv API_DOMAIN_ALIAS)" && "$alias" =~ ^[A-Za-z0-9.-]+$ && "$alias" != *localhost* && "$alias" != "$OLD_DOMAIN" ]]; then setv API_DOMAIN_ALIAS "$alias"; fi
   fi
+fi
+# Populate an empty environment left by an earlier setup, preserving configured domains.
+if [[ -z "$(getv DOMAIN)" ]]; then
+  default_domain="$(awk -F= '$1=="DOMAIN" {print $2; exit}' "$ROOT_DIR/infra/systemd/production.env.example")"
+  setv DOMAIN "$default_domain"
 fi
 busy(){ ss -H -ltn "sport = :$1" | grep -q .; }
 reserved(){
@@ -114,11 +119,11 @@ for s in duitku_merchant_code duitku_api_key telegram_bot_token telegram_webhook
 done
 DOMAIN="$(getv DOMAIN)"
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ && "$DOMAIN" != *localhost* ]] || die 'DOMAIN_REQUIRED: fill DOMAIN in /etc/robux/production.env; Nginx was not changed.'
-getent ahostsv4 "$DOMAIN" >/dev/null || die "DNS for $DOMAIN does not resolve; Nginx was not changed."
+getent ahostsv4 "$DOMAIN" >/dev/null || die "PREREQUISITE_NOT_MET: Robux DNS for $DOMAIN does not resolve; Nginx was not changed."
 API_ALIAS="$(getv API_DOMAIN_ALIAS)"
 if [[ -n "$API_ALIAS" ]]; then
   [[ "$API_ALIAS" =~ ^[A-Za-z0-9.-]+$ && "$API_ALIAS" != *localhost* && "$API_ALIAS" != "$DOMAIN" ]] || die 'Invalid API_DOMAIN_ALIAS in production environment.'
-  getent ahostsv4 "$API_ALIAS" >/dev/null || die "DNS for API_DOMAIN_ALIAS $API_ALIAS does not resolve."
+  getent ahostsv4 "$API_ALIAS" >/dev/null || die "PREREQUISITE_NOT_MET: Robux API alias DNS for $API_ALIAS does not resolve."
 fi
 SERVER_NAMES="$DOMAIN"; [[ -z "$API_ALIAS" ]] || SERVER_NAMES="$DOMAIN $API_ALIAS"
 setv TRUSTED_ORIGINS "https://$DOMAIN"
@@ -190,24 +195,22 @@ if ! nginx -t; then
   nginx -t >/dev/null 2>&1 || true
   die 'nginx -t failed. Only the Robux vhost change was rolled back; host Nginx was NOT reloaded.'
 fi
-if ! systemctl reload nginx; then
-  if [[ "$VHOST_CHANGED" == 1 ]]; then
-    if [[ -n "$VHOST_BACKUP" ]]; then cp -a "$VHOST_BACKUP" "$VHOST"; else rm -f "$VHOST"; fi
+if [[ "$VHOST_CHANGED" == 1 || "$CREATED_LINK" == 1 ]]; then
+  if ! systemctl reload nginx; then
+    if [[ "$VHOST_CHANGED" == 1 ]]; then
+      if [[ -n "$VHOST_BACKUP" ]]; then cp -a "$VHOST_BACKUP" "$VHOST"; else rm -f "$VHOST"; fi
+    fi
+    [[ "$CREATED_LINK" == 0 ]] || rm -f "$LINK"
+    die 'Host Nginx reload failed; global Nginx was not stopped. Check active config.'
   fi
-  [[ "$CREATED_LINK" == 0 ]] || rm -f "$LINK"
-  die 'Host Nginx reload failed; global Nginx was not stopped. Check active config.'
+else
+  printf 'Robux Nginx configuration unchanged; reload skipped.\n'
 fi
 nginx -T >"$SNAPSHOT_DIR/nginx-after-robux-setup.txt" 2>&1 || die 'Post-setup nginx -T failed.'
 grep -E '^[[:space:]]*server_name[[:space:]]' "$SNAPSHOT_DIR/nginx-before-robux.txt" | sed -E 's/^[[:space:]]*server_name[[:space:]]+//;s/;.*$//' | tr ' ' '\n' | sed '/^$/d' | sort -u >"$SNAPSHOT_DIR/robux-setup-before.txt"
 grep -E '^[[:space:]]*server_name[[:space:]]' "$SNAPSHOT_DIR/nginx-after-robux-setup.txt" | sed -E 's/^[[:space:]]*server_name[[:space:]]+//;s/;.*$//' | tr ' ' '\n' | sed '/^$/d' | sort -u >"$SNAPSHOT_DIR/robux-setup-after.txt"
 if comm -23 "$SNAPSHOT_DIR/robux-setup-before.txt" "$SNAPSHOT_DIR/robux-setup-after.txt" | grep -q .; then die 'An existing host Nginx server_name disappeared; inspect Nginx immediately.'; fi
-for host in smartpad.web.id quranest.web.id ride.fajarhub.tech mbgcore.id ceotopup.com layartopup.com; do
-  if grep -Fq "$host" "$SNAPSHOT_DIR/nginx-before-robux.txt"; then
-    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$host/" || true)"
-    [[ "$code" =~ ^[23][0-9][0-9]$ ]] || die "Existing project $host did not pass its HTTPS smoke test (HTTP ${code:-no response}). Stop and investigate."
-    printf 'Existing project %s: HTTP %s\n' "$host" "$code"
-  fi
-done
 printf '\nSetup ready. No app services started and no certificate issued.\nDomain: %s\nAPI: 127.0.0.1:%s\nWeb: 127.0.0.1:%s\nPostgreSQL: Docker loopback :%s\nRedis: Docker loopback :%s\n' "$DOMAIN" "$(getv API_PORT)" "$(getv WEB_PORT)" "$(getv POSTGRES_HOST_PORT)" "$(getv REDIS_HOST_PORT)"
 if [[ -n "$API_ALIAS" ]]; then printf 'After confirming DNS and secrets, run: sudo certbot --nginx -d %s -d %s\n' "$DOMAIN" "$API_ALIAS"; else printf 'After confirming DNS and secrets, run: sudo certbot --nginx -d %s\n' "$DOMAIN"; fi
+printf 'Robux runtime health: NOT VERIFIED by setup; deploy.sh checks API, Web, Worker, Scheduler, PostgreSQL and Redis.\n'
 printf 'Then deploy with: sudo ./deploy.sh\n'
